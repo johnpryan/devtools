@@ -11,6 +11,8 @@ found in the LICENSE file or at https://developers.google.com/open-source/licens
   `DeeplinkManager`.
 * Add `UniversalLinkSettings.fromErrorJson`, `UniversalLinkSettings.error`, and
   `UniversalLinkSettings.error` getter to surface iOS universal link settings errors.
+* Add runtime `file://` URI and path segment depth validation in
+  `packageRootFromFileUriString`.
 
 # 14.0.0
 

@@ -74,10 +74,69 @@ void main() {
       expect(result, equals(expected ?? projectRootUriString));
     }
 
-    test('packageRootFromFileUriString throw exception for invalid input', () {
-      expect(() async {
-        await packageRootFromFileUriString('/not/a/valid/file/uri');
-      }, throwsA(isA<AssertionError>()));
+    test(
+      'packageRootFromFileUriString throw exception for invalid input',
+      () async {
+        await expectLater(
+          packageRootFromFileUriString('/not/a/valid/file/uri'),
+          throwsA(isA<ArgumentError>()),
+        );
+        await expectLater(
+          packageRootFromFileUriString('https://example.com/lib/main.dart'),
+          throwsA(isA<ArgumentError>()),
+        );
+        await expectLater(
+          packageRootFromFileUriString('file://remotehost/share/lib/main.dart'),
+          throwsA(isA<ArgumentError>()),
+        );
+      },
+    );
+
+    test('packageRootFromFileUriString throws ArgumentError for single-segment '
+        'and top-level bypass URIs', () async {
+      for (final dtdConnection in [null, testDtdConnection]) {
+        for (final invalidUri in const [
+          'file:///',
+          'file:///Users',
+          'file:///home',
+          'file:///C:/',
+          'file:///C:/Users',
+          'file:///lib/x.dart',
+          'file:///Users/lib/x.dart',
+          'file:///C:/Users/lib/x.dart',
+        ]) {
+          await expectLater(
+            packageRootFromFileUriString(invalidUri, dtd: dtdConnection),
+            throwsA(isA<ArgumentError>()),
+            reason:
+                'Expected $invalidUri (dtd: ${dtdConnection != null}) '
+                'to throw ArgumentError',
+          );
+        }
+      }
+    });
+
+    test('packageRootFromFileUriString throws ArgumentError when DTD workspace '
+        'root has no .dart_tool directory', () async {
+      final nonPackageDirectory = Directory(
+        p.joinAll([testDirectory.path, 'non_package_root']),
+      )..createSync(recursive: true);
+      final nonPackageLibFile = File(
+        p.join(nonPackageDirectory.path, 'lib', 'foo.dart'),
+      )..createSync(recursive: true);
+
+      await testDtdConnection!.setIDEWorkspaceRoots(dtd!.info!.secret!, [
+        Uri.parse(projectRootUriString),
+        nonPackageDirectory.uri,
+      ]);
+
+      await expectLater(
+        packageRootFromFileUriString(
+          nonPackageLibFile.uri.toString(),
+          dtd: testDtdConnection,
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
     });
 
     for (final useDtd in const [true, false]) {

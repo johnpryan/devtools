@@ -8,6 +8,8 @@ import 'package:meta/meta.dart';
 // ignore: unused-code, false positive.
 const _fileUriPrefix = 'file://';
 
+final _windowsDriveLetterRegExp = RegExp(r'^[a-zA-Z]:$');
+
 /// Attempts to detect the package root of [fileUriString], which is expected to
 /// be a proper file URI (i.e. starts with "file://").
 ///
@@ -34,17 +36,21 @@ Future<String> packageRootFromFileUriString(
   DartToolingDaemon? dtd,
   @visibleForTesting bool throwOnDtdSearchFailed = false,
 }) async {
-  assert(
-    fileUriString.startsWith(_fileUriPrefix),
-    'Invalid URI format: expected URI String to start with "$_fileUriPrefix", '
-    'but instead, got $fileUriString.',
-  );
+  final parsedUri = _validateFileUri(fileUriString, 'fileUriString');
+  if (_effectivePathSegments(parsedUri).length < 2) {
+    throw ArgumentError.value(
+      fileUriString,
+      'fileUriString',
+      'URI cannot be a top-level or root directory.',
+    );
+  }
 
   if (dtd != null) {
     // Use type [Object] so we can store exceptions of all types.
     Object? exception;
+    var listedAnyDirectory = false;
 
-    var uri = Uri.parse(fileUriString);
+    var uri = parsedUri;
     while (uri.pathSegments.length > 1) {
       // Remove the last path segment.
       uri = uri.replace(
@@ -52,6 +58,7 @@ Future<String> packageRootFromFileUriString(
       );
       try {
         final directoryContents = await dtd.listDirectoryContents(uri);
+        listedAnyDirectory = true;
         final containsDartToolDirectory = (directoryContents.uris ?? const [])
             .any((uri) => uri.path.endsWith('.dart_tool/'));
         if (containsDartToolDirectory) {
@@ -75,6 +82,13 @@ Future<String> packageRootFromFileUriString(
         '${exception != null ? ' with exception: $exception' : '.'}',
       );
     }
+    if (listedAnyDirectory || exception == null) {
+      throw ArgumentError.value(
+        fileUriString,
+        'fileUriString',
+        'Could not find a Dart package root (.dart_tool) for URI.',
+      );
+    }
   }
 
   // If we do not have access to DTD or if we failed to detect the package root
@@ -89,14 +103,48 @@ Future<String> packageRootFromFileUriString(
   return _assertUriFormatAndReturn(fileUriString);
 }
 
+Uri _validateFileUri(String uriString, String argumentName) {
+  final parsedUri = Uri.tryParse(uriString);
+  if (!uriString.startsWith(_fileUriPrefix) ||
+      parsedUri == null ||
+      parsedUri.scheme != 'file' ||
+      parsedUri.host.isNotEmpty) {
+    throw ArgumentError.value(
+      uriString,
+      argumentName,
+      'Invalid URI format: expected a local file:// URI String with an empty '
+      'host.',
+    );
+  }
+  return parsedUri;
+}
+
+/// Returns the non-empty path segments of [uri], excluding any leading Windows
+/// drive letter segment (e.g. `C:`).
+List<String> _effectivePathSegments(Uri uri) {
+  final segments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
+  if (segments.isNotEmpty &&
+      _windowsDriveLetterRegExp.hasMatch(segments.first)) {
+    return segments.sublist(1);
+  }
+  return segments;
+}
+
 String _assertUriFormatAndReturn(String uriString) {
-  assert(
-    uriString.startsWith(_fileUriPrefix),
-    'Invalid URI format: should be a file URI.',
-  );
-  assert(
-    !uriString.endsWith('/'),
-    'Invalid URI format: should not have a trailing slash.',
-  );
+  final parsedUri = _validateFileUri(uriString, 'uriString');
+  if (uriString.endsWith('/')) {
+    throw ArgumentError.value(
+      uriString,
+      'uriString',
+      'Invalid URI format: should not have a trailing slash.',
+    );
+  }
+  if (_effectivePathSegments(parsedUri).length < 2) {
+    throw ArgumentError.value(
+      uriString,
+      'uriString',
+      'URI cannot be a top-level or root directory.',
+    );
+  }
   return uriString;
 }
