@@ -124,15 +124,17 @@ $_extensionsKey:
     )?.writeAsStringSync(yamlEditor.toString(), flush: true);
   }
 
-  /// Returns the `devtools_options.yaml` file at [optionsUri].
+  /// Returns the `devtools_options.yaml` file at [optionsUri], or `null` if its
+  /// parent directory does not exist.
   ///
   /// If the `devtools_options.yaml` does not already exist, it will be created
   /// and written with [_defaultOptions], and then returned.
   File? _lookupOptionsFile(Uri optionsUri) {
     final optionsFile = File.fromUri(optionsUri);
+    if (!optionsFile.parent.existsSync()) return null;
     if (!optionsFile.existsSync()) {
       optionsFile
-        ..createSync(recursive: true)
+        ..createSync()
         ..writeAsStringSync(_defaultOptions, flush: true);
     }
     return optionsFile;

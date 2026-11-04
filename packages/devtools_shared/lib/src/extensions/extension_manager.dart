@@ -32,6 +32,11 @@ class ExtensionsManager {
   /// [serveAvailableExtensions] is called.
   final devtoolsExtensions = <DevToolsExtensionConfig>[];
 
+  /// The set of `devtools_options.yaml` file URIs for all currently served
+  /// DevTools extensions.
+  Set<String> get servedDevToolsOptionsUris =>
+      devtoolsExtensions.map((e) => e.devtoolsOptionsUri).toSet();
+
   final _extensionLocationsByIdentifier = <String, String?>{};
 
   /// Returns the absolute path of the assets for the extension with identifier
@@ -71,28 +76,36 @@ class ExtensionsManager {
     _clear();
     final parsingErrors = StringBuffer();
 
-    // Find all runtime extensions for [rootFileUriString], if non-null and
-    // non-empty.
-    if (rootFileUriString != null && rootFileUriString.isNotEmpty) {
-      logs.add(
-        'ExtensionsManager.serveAvailableExtensions adding extensions for app '
-        'root.',
-      );
-      await _addExtensionsForRoot(
-        rootFileUriString,
-        logs: logs,
-        parsingErrors: parsingErrors,
-        staticContext: false,
-      );
-    }
-
-    // Find all static extensions for the project roots, which are derived from
-    // the Dart Tooling Daemon, and add them to [devtoolsExtensions].
     final dtdUri = dtd?.localUri;
-    if (dtdUri != null) {
-      DartToolingDaemon? dartToolingDaemon;
-      try {
+    DartToolingDaemon? dartToolingDaemon;
+    try {
+      if (dtdUri != null) {
         dartToolingDaemon = await DartToolingDaemon.connect(dtdUri);
+      }
+
+      // Find all runtime extensions for [rootFileUriString], if non-null and
+      // non-empty.
+      if (rootFileUriString != null && rootFileUriString.isNotEmpty) {
+        await _validateRootFileUri(
+          rootFileUriString,
+          logs: logs,
+          dtd: dartToolingDaemon,
+        );
+        logs.add(
+          'ExtensionsManager.serveAvailableExtensions adding extensions for app '
+          'root.',
+        );
+        await _addExtensionsForRoot(
+          rootFileUriString,
+          logs: logs,
+          parsingErrors: parsingErrors,
+          staticContext: false,
+        );
+      }
+
+      // Find all static extensions for the project roots, which are derived from
+      // the Dart Tooling Daemon, and add them to [devtoolsExtensions].
+      if (dartToolingDaemon != null) {
         final projectRoots = await dartToolingDaemon.getProjectRoots(
           depth: staticExtensionsSearchDepth,
         );
@@ -113,9 +126,9 @@ class ExtensionsManager {
             staticContext: true,
           );
         }
-      } finally {
-        await dartToolingDaemon?.close();
       }
+    } finally {
+      await dartToolingDaemon?.close();
     }
 
     if (parsingErrors.isNotEmpty) {
@@ -123,6 +136,65 @@ class ExtensionsManager {
         'Encountered errors while parsing extension config.yaml '
         'files:\n$parsingErrors',
       );
+    }
+  }
+
+  /// Validates that [rootFileUriString] is a local `file://` URI pointing to an
+  /// existing Dart package root on disk, and (when [dtd] has configured IDE
+  /// workspace roots) is within one of those workspace roots.
+  Future<void> _validateRootFileUri(
+    String rootFileUriString, {
+    required List<String> logs,
+    required DartToolingDaemon? dtd,
+  }) async {
+    _assertUriFormat(rootFileUriString);
+    final rootUri = Uri.parse(rootFileUriString);
+    if (rootUri.path.isEmpty) {
+      final message =
+          'Invalid rootFileUriString "$rootFileUriString": must be a file:// '
+          'URI with a non-empty path.';
+      logs.add(message);
+      throw ServeAvailableExtensionsException(message);
+    }
+
+    final rootPath = path.normalize(rootUri.toFilePath());
+    final hasPackageConfig = File(
+      path.join(rootPath, '.dart_tool', 'package_config.json'),
+    ).existsSync();
+    final hasPubspec = File(path.join(rootPath, 'pubspec.yaml')).existsSync();
+    if (!Directory(rootPath).existsSync() ||
+        (!hasPackageConfig && !hasPubspec)) {
+      final message =
+          'Invalid rootFileUriString "$rootFileUriString": directory does not '
+          'exist or is not a Dart package root.';
+      logs.add(message);
+      throw ServeAvailableExtensionsException(message);
+    }
+
+    if (dtd != null) {
+      final ideWorkspaceRoots = await dtd.getIDEWorkspaceRoots();
+      if (ideWorkspaceRoots.ideWorkspaceRoots.isNotEmpty) {
+        final isWithinWorkspace = ideWorkspaceRoots.ideWorkspaceRoots.any((
+          workspaceRootUri,
+        ) {
+          if (workspaceRootUri.scheme != 'file' ||
+              workspaceRootUri.host.isNotEmpty) {
+            return false;
+          }
+          final workspaceRootPath = path.normalize(
+            workspaceRootUri.toFilePath(),
+          );
+          return path.equals(workspaceRootPath, rootPath) ||
+              path.isWithin(workspaceRootPath, rootPath);
+        });
+        if (!isWithinWorkspace) {
+          final message =
+              'Invalid rootFileUriString "$rootFileUriString": must be within '
+              'an active IDE workspace root.';
+          logs.add(message);
+          throw ServeAvailableExtensionsException(message);
+        }
+      }
     }
   }
 
@@ -384,4 +456,15 @@ class ExtensionsManager {
 /// config.yaml files.
 class ExtensionParsingException extends FormatException {
   const ExtensionParsingException(super.message);
+}
+
+/// Exception type for errors encountered while serving DevTools extensions.
+class ServeAvailableExtensionsException implements Exception {
+  const ServeAvailableExtensionsException(this.message);
+
+  /// The error message describing why serving extensions failed.
+  final String message;
+
+  @override
+  String toString() => 'ServeAvailableExtensionsException: $message';
 }

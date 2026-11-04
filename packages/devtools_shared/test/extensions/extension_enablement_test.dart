@@ -156,5 +156,34 @@ extensions:
   - provider: true
   - custom_pkg: true''');
     });
+
+    test(
+      'returns error and does not create parent directory when parent does not '
+      'exist',
+      () {
+        final missingParentDir = Directory(
+          p.join(tmpDir.path, 'missing_parent'),
+        );
+        final missingOptionsUri = Uri.file(
+          p.join(missingParentDir.path, devtoolsOptionsFileName),
+        );
+        expect(
+          options.lookupExtensionEnabledState(
+            devtoolsOptionsUri: missingOptionsUri,
+            extensionName: 'foo',
+          ),
+          ExtensionEnabledState.error,
+        );
+        expect(
+          options.setExtensionEnabledState(
+            devtoolsOptionsUri: missingOptionsUri,
+            extensionName: 'foo',
+            enable: true,
+          ),
+          ExtensionEnabledState.error,
+        );
+        expect(missingParentDir.existsSync(), isFalse);
+      },
+    );
   });
 }
