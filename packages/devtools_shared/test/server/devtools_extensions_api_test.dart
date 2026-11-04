@@ -60,6 +60,7 @@ void main() {
   Future<Response> serveExtensions(
     ExtensionsManager manager, {
     bool includeRuntimeRoot = true,
+    String? runtimeRootOverride,
   }) async {
     final request = Request(
       'post',
@@ -68,9 +69,9 @@ void main() {
         host: 'localhost',
         path: ExtensionsApi.apiServeAvailableExtensions,
         queryParameters: {
-          ExtensionsApi.packageRootUriPropertyName: includeRuntimeRoot
-              ? extensionTestManager.runtimeAppRoot
-              : null,
+          ExtensionsApi.packageRootUriPropertyName:
+              runtimeRootOverride ??
+              (includeRuntimeRoot ? extensionTestManager.runtimeAppRoot : null),
         },
       ),
     );
@@ -177,6 +178,115 @@ void main() {
         expect(error, contains('Fake exception for test'));
       },
     );
+
+    test('rejects packageRootUri with non-empty host (UNC path)', () async {
+      await expectLater(
+        extensionsManager.serveAvailableExtensions(
+          'file://remotehost/share/app',
+          <String>[],
+          null,
+        ),
+        throwsArgumentError,
+      );
+
+      final response = await serveExtensions(
+        extensionsManager,
+        runtimeRootOverride: 'file://remotehost/share/app',
+      );
+      expect(response.statusCode, HttpStatus.internalServerError);
+      expect(extensionsManager.devtoolsExtensions, isEmpty);
+
+      final parsedResponse = json.decode(await response.readAsString()) as Map;
+      final error = parsedResponse['error'];
+      expect(
+        error,
+        contains('must be a file:// URI String with an empty host'),
+      );
+    });
+
+    test('rejects extension with absolute buildLocation', () async {
+      await initializeTestDirectory();
+      final configFile = File(
+        p.join(
+          extensionTestManager.testDirectory.path,
+          'extensions',
+          'static_extension_2',
+          'extension',
+          'devtools',
+          'config.yaml',
+        ),
+      );
+
+      for (final invalidBuildLocation in ['/tmp', r'C:\']) {
+        configFile.writeAsStringSync(
+          '${staticExtension2Package.configYamlContent}'
+          "buildLocation: '$invalidBuildLocation'\n",
+          flush: true,
+        );
+
+        final response = await serveExtensions(extensionsManager);
+        expect(response.statusCode, HttpStatus.ok);
+        expect(
+          extensionsManager.devtoolsExtensions.where(
+            (e) => e.packageName == 'static_extension_2',
+          ),
+          isEmpty,
+        );
+
+        final parsedResponse =
+            json.decode(await response.readAsString()) as Map;
+        final warning =
+            parsedResponse[ExtensionsApi.extensionsResultWarningPropertyName];
+        expect(
+          warning,
+          contains(
+            'Ignoring extension from package "static_extension_2": invalid '
+            'buildLocation "$invalidBuildLocation" outside package root.',
+          ),
+        );
+      }
+    });
+
+    test('rejects extension when build directory contains symlink pointing '
+        'outside build directory', () async {
+      await initializeTestDirectory();
+      final secretFile = File(
+        p.join(extensionTestManager.testDirectory.path, 'secret.txt'),
+      )..writeAsStringSync('top-secret', flush: true);
+
+      final buildDir = Directory(
+        p.join(
+          extensionTestManager.testDirectory.path,
+          'extensions',
+          'static_extension_2',
+          'extension',
+          'devtools',
+          'build',
+        ),
+      );
+      Link(p.join(buildDir.path, 'leak.txt')).createSync(secretFile.path);
+
+      final response = await serveExtensions(extensionsManager);
+      expect(response.statusCode, HttpStatus.ok);
+      expect(
+        extensionsManager.devtoolsExtensions.where(
+          (e) => e.packageName == 'static_extension_2',
+        ),
+        isEmpty,
+      );
+
+      final parsedResponse = json.decode(await response.readAsString()) as Map;
+      final warning =
+          parsedResponse[ExtensionsApi.extensionsResultWarningPropertyName];
+      expect(
+        warning,
+        contains(
+          'Ignoring extension from package "static_extension_2": '
+          'extension build directory contains a symlink pointing outside '
+          'the build directory.',
+        ),
+      );
+    });
   });
 
   group(ExtensionsApi.apiExtensionEnabledState, () {

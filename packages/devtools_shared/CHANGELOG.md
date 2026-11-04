@@ -5,6 +5,8 @@ found in the LICENSE file or at https://developers.google.com/open-source/licens
 -->
 # 14.0.1
 
+* Reject `file://` URIs with non-empty hosts (UNC paths) and validate extension
+  build paths and symlinks in `ExtensionsManager`.
 * Track providing package name for DevTools extensions to isolate extension enablement,
   deduplication, and asset loading.
 * Validate `rootPath`, `buildVariant`, `configuration`, and `target` parameters in

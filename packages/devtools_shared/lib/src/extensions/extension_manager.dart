@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file or at https://developers.google.com/open-source/licenses/bsd.
 
+import 'dart:io';
+
 import 'package:collection/collection.dart';
 import 'package:dtd/dtd.dart';
 import 'package:extension_discovery/extension_discovery.dart';
@@ -161,6 +163,16 @@ class ExtensionsManager {
       final relativeExtensionLocation =
           config['buildLocation'] as String? ?? 'build';
 
+      if (path.isAbsolute(relativeExtensionLocation) ||
+          path.posix.isAbsolute(relativeExtensionLocation) ||
+          path.windows.isAbsolute(relativeExtensionLocation)) {
+        parsingErrors.writeln(
+          'Ignoring extension from package "${extension.package}": invalid '
+          'buildLocation "$relativeExtensionLocation" outside package root.',
+        );
+        continue;
+      }
+
       final packageRoot = path.normalize(extension.rootUri.toFilePath());
       final location = path.normalize(
         path.join(
@@ -185,11 +197,79 @@ class ExtensionsManager {
         continue;
       }
 
+      if (!Directory(packageRoot).existsSync() ||
+          !Directory(location).existsSync()) {
+        parsingErrors.writeln(
+          'Ignoring extension from package "${extension.package}": '
+          'extension build directory "$location" does not exist.',
+        );
+        continue;
+      }
+
+      final String resolvedPackageRoot;
+      final String resolvedLocation;
+      try {
+        resolvedPackageRoot = path.normalize(
+          Directory(packageRoot).resolveSymbolicLinksSync(),
+        );
+        resolvedLocation = path.normalize(
+          Directory(location).resolveSymbolicLinksSync(),
+        );
+      } on FileSystemException catch (e) {
+        parsingErrors.writeln(
+          'Ignoring extension from package "${extension.package}": '
+          'failed to resolve extension paths (${e.message}).',
+        );
+        continue;
+      }
+
+      if (!path.isWithin(resolvedPackageRoot, resolvedLocation)) {
+        parsingErrors.writeln(
+          'Ignoring extension from package "${extension.package}": invalid '
+          'buildLocation "$relativeExtensionLocation" outside package root.',
+        );
+        continue;
+      }
+
+      var hasInvalidSymlink = false;
+      try {
+        for (final entity in Directory(
+          resolvedLocation,
+        ).listSync(recursive: true, followLinks: false)) {
+          if (entity is Link) {
+            final String resolvedTarget;
+            try {
+              resolvedTarget = path.normalize(
+                entity.resolveSymbolicLinksSync(),
+              );
+            } on FileSystemException {
+              hasInvalidSymlink = true;
+              break;
+            }
+            if (!path.equals(resolvedLocation, resolvedTarget) &&
+                !path.isWithin(resolvedLocation, resolvedTarget)) {
+              hasInvalidSymlink = true;
+              break;
+            }
+          }
+        }
+      } on FileSystemException {
+        hasInvalidSymlink = true;
+      }
+      if (hasInvalidSymlink) {
+        parsingErrors.writeln(
+          'Ignoring extension from package "${extension.package}": '
+          'extension build directory contains a symlink pointing outside '
+          'the build directory.',
+        );
+        continue;
+      }
+
       try {
         final extensionConfig = DevToolsExtensionConfig.parse({
           ...config,
           DevToolsExtensionConfig.packageNameKey: extension.package,
-          DevToolsExtensionConfig.extensionAssetsPathKey: location,
+          DevToolsExtensionConfig.extensionAssetsPathKey: resolvedLocation,
           // The [packageConfigPath] will look like
           // 'pkg/.dart_tool/package_config.json' so we will store the
           // devtools_options.yaml file at the 'pkg' root:
@@ -211,8 +291,18 @@ class ExtensionsManager {
   }
 
   void _assertUriFormat(String? uriString) {
-    if (uriString != null && !uriString.startsWith('file://')) {
-      throw ArgumentError.value(uriString, 'must be a file:// URI String');
+    if (uriString != null) {
+      final uri = Uri.tryParse(uriString);
+      if (!uriString.startsWith('file://') ||
+          uri == null ||
+          uri.scheme != 'file' ||
+          uri.host.isNotEmpty) {
+        throw ArgumentError.value(
+          uriString,
+          'uriString',
+          'must be a file:// URI String with an empty host',
+        );
+      }
     }
   }
 
