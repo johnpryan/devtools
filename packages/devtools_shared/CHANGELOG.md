@@ -11,6 +11,8 @@ found in the LICENSE file or at https://developers.google.com/open-source/licens
   `DeeplinkManager`.
 * Add `UniversalLinkSettings.fromErrorJson`, `UniversalLinkSettings.error`, and
   `UniversalLinkSettings.error` getter to surface iOS universal link settings errors.
+* Validate detected package roots in `VmServiceHandler` before caching or updating DTD
+  IDE workspace roots.
 
 # 14.0.0
 
