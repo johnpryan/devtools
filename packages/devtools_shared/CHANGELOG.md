@@ -11,6 +11,8 @@ found in the LICENSE file or at https://developers.google.com/open-source/licens
   `DeeplinkManager`.
 * Add `UniversalLinkSettings.fromErrorJson`, `UniversalLinkSettings.error`, and
   `UniversalLinkSettings.error` getter to surface iOS universal link settings errors.
+* Restrict `normalizeVmServiceUri` to allowed VM service schemes (`http`, `https`,
+  `ws`, `wss`, `sse`, `sses`) and loopback hosts (`localhost`, `127.0.0.0/8`, `::1`).
 
 # 14.0.0
 
