@@ -15,6 +15,34 @@ EmbeddedExtensionControllerImpl createEmbeddedExtensionController(
   return EmbeddedExtensionControllerImpl(config);
 }
 
+/// Validates whether a message from [eventOrigin] and [eventSource] is allowed
+/// for an embedded extension loaded from [extensionUrl] with iFrame
+/// `contentWindow` [expectedSource].
+bool isAllowedEmbeddedExtensionMessage({
+  required String eventOrigin,
+  required String extensionUrl,
+  required Object? eventSource,
+  required Object? expectedSource,
+}) {
+  if (eventOrigin.isEmpty || eventOrigin == 'null') {
+    return false;
+  }
+
+  final expectedUri = Uri.tryParse(extensionUrl);
+  if (expectedUri != null &&
+      (expectedUri.isScheme('http') || expectedUri.isScheme('https'))) {
+    if (eventOrigin != expectedUri.origin) {
+      return false;
+    }
+  }
+
+  if (expectedSource != null && eventSource != expectedSource) {
+    return false;
+  }
+
+  return true;
+}
+
 abstract class EmbeddedExtensionController extends DisposableController {
   EmbeddedExtensionController(this.extensionConfig);
 

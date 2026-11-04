@@ -3,6 +3,7 @@
 // found in the LICENSE file or at https://developers.google.com/open-source/licenses/bsd.
 
 import 'package:devtools_app/devtools_app.dart';
+import 'package:devtools_app/src/extensions/embedded/controller.dart';
 import 'package:devtools_app/src/extensions/embedded/view.dart';
 import 'package:devtools_app/src/extensions/extension_screen.dart';
 import 'package:devtools_app/src/extensions/extension_screen_controls.dart';
@@ -293,6 +294,86 @@ void main() {
         expect(_extensionContextMenuFinder, findsNothing);
       },
     );
+
+    test('validates embedded extension MessageEvent origin and source', () {
+      const extensionUrl =
+          'http://127.0.0.1:9100/devtools_extensions/foo_ext/index.html?theme=dark';
+      final expectedWindow = Object();
+      final otherWindow = Object();
+
+      // Valid matching origin and source window.
+      expect(
+        isAllowedEmbeddedExtensionMessage(
+          eventOrigin: 'http://127.0.0.1:9100',
+          extensionUrl: extensionUrl,
+          eventSource: expectedWindow,
+          expectedSource: expectedWindow,
+        ),
+        isTrue,
+      );
+
+      // Untrusted origin is rejected.
+      expect(
+        isAllowedEmbeddedExtensionMessage(
+          eventOrigin: 'https://evil.example.com',
+          extensionUrl: extensionUrl,
+          eventSource: expectedWindow,
+          expectedSource: expectedWindow,
+        ),
+        isFalse,
+      );
+
+      // Different port or host than extensionUrl is rejected.
+      expect(
+        isAllowedEmbeddedExtensionMessage(
+          eventOrigin: 'http://127.0.0.1:8080',
+          extensionUrl: extensionUrl,
+          eventSource: expectedWindow,
+          expectedSource: expectedWindow,
+        ),
+        isFalse,
+      );
+
+      // Empty or 'null' origin is rejected.
+      expect(
+        isAllowedEmbeddedExtensionMessage(
+          eventOrigin: '',
+          extensionUrl: extensionUrl,
+          eventSource: expectedWindow,
+          expectedSource: expectedWindow,
+        ),
+        isFalse,
+      );
+      expect(
+        isAllowedEmbeddedExtensionMessage(
+          eventOrigin: 'null',
+          extensionUrl: extensionUrl,
+          eventSource: expectedWindow,
+          expectedSource: expectedWindow,
+        ),
+        isFalse,
+      );
+
+      // Mismatched source window is rejected.
+      expect(
+        isAllowedEmbeddedExtensionMessage(
+          eventOrigin: 'http://127.0.0.1:9100',
+          extensionUrl: extensionUrl,
+          eventSource: otherWindow,
+          expectedSource: expectedWindow,
+        ),
+        isFalse,
+      );
+      expect(
+        isAllowedEmbeddedExtensionMessage(
+          eventOrigin: 'http://127.0.0.1:9100',
+          extensionUrl: extensionUrl,
+          eventSource: null,
+          expectedSource: expectedWindow,
+        ),
+        isFalse,
+      );
+    });
   });
 }
 

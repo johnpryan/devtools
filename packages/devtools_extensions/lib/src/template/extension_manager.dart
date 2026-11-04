@@ -80,16 +80,57 @@ class ExtensionManager {
   }
 
   void _handleMessage(Event e) {
+    if (!e.isMessageEvent) return;
+    final messageEvent = e as MessageEvent;
+    if (!isAllowedMessageEvent(messageEvent)) return;
+
     final extensionEvent = tryParseExtensionEvent(e);
     if (extensionEvent != null) {
-      _handleExtensionEvent(extensionEvent, e as MessageEvent);
+      _handleExtensionEvent(extensionEvent, messageEvent);
     }
+  }
+
+  /// Validates that [event] originated from a trusted DevTools origin and the
+  /// expected source window.
+  ///
+  /// Accepts messages whose [MessageEvent.origin] matches [windowOrigin]
+  /// (defaults to [Window.origin]) or is a valid loopback HTTP/HTTPS origin
+  /// (`localhost`, `127.0.0.1`, `[::1]`, or `::1`), and whose
+  /// [MessageEvent.source] (when non-null) matches [expectedSource] (defaults
+  /// to [window] in simulated environments, or [Window.parent] otherwise).
+  @visibleForTesting
+  bool isAllowedMessageEvent(
+    MessageEvent event, {
+    String? windowOrigin,
+    EventTarget? expectedSource,
+  }) {
+    // ignore: invalid_use_of_visible_for_testing_member, shared with api_test.
+    final validOrigin = isAllowedExtensionOrigin(
+      event.origin,
+      windowOrigin: windowOrigin ?? window.origin,
+    );
+    if (!validOrigin) {
+      return false;
+    }
+
+    final source = event.source;
+    if (source != null) {
+      final targetWindow =
+          expectedSource ?? (_useSimulatedEnvironment ? window : window.parent);
+      if (source != targetWindow) {
+        return false;
+      }
+    }
+
+    return true;
   }
 
   void _handleExtensionEvent(
     DevToolsExtensionEvent extensionEvent,
     MessageEvent e,
   ) {
+    if (!isAllowedMessageEvent(e)) return;
+
     // Ignore events that come from the [ExtensionManager] itself.
     if (extensionEvent.source == '$ExtensionManager') return;
 

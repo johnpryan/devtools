@@ -371,6 +371,69 @@ void main() {
       }, throwsAssertionError);
     });
   });
+
+  group('message origin validation', () {
+    test('isLoopbackOrigin', () {
+      expect(isLoopbackOrigin('http://localhost:8080'), isTrue);
+      expect(isLoopbackOrigin('https://localhost:9100'), isTrue);
+      expect(isLoopbackOrigin('http://127.0.0.1:9100'), isTrue);
+      expect(isLoopbackOrigin('https://127.0.0.1:9100'), isTrue);
+      expect(isLoopbackOrigin('http://[::1]:9100'), isTrue);
+      expect(isLoopbackOrigin('https://[::1]:8080'), isTrue);
+
+      expect(isLoopbackOrigin(''), isFalse);
+      expect(isLoopbackOrigin('null'), isFalse);
+      expect(isLoopbackOrigin('https://evil.example.com'), isFalse);
+      expect(isLoopbackOrigin('http://localhost.evil.com:8080'), isFalse);
+      expect(isLoopbackOrigin('ws://localhost:8080'), isFalse);
+      expect(isLoopbackOrigin('file:///path/to/file'), isFalse);
+    });
+
+    test('isAllowedExtensionOrigin', () {
+      const windowOrigin = 'https://devtools.example.com';
+
+      expect(
+        isAllowedExtensionOrigin(windowOrigin, windowOrigin: windowOrigin),
+        isTrue,
+      );
+      expect(
+        isAllowedExtensionOrigin(
+          'http://localhost:9100',
+          windowOrigin: windowOrigin,
+        ),
+        isTrue,
+      );
+      expect(
+        isAllowedExtensionOrigin(
+          'http://127.0.0.1:9100',
+          windowOrigin: windowOrigin,
+        ),
+        isTrue,
+      );
+      expect(
+        isAllowedExtensionOrigin(
+          'http://[::1]:9100',
+          windowOrigin: windowOrigin,
+        ),
+        isTrue,
+      );
+
+      expect(
+        isAllowedExtensionOrigin(
+          'https://evil.example.com',
+          windowOrigin: windowOrigin,
+        ),
+        isFalse,
+      );
+      expect(
+        isAllowedExtensionOrigin('null', windowOrigin: windowOrigin),
+        isFalse,
+      );
+      expect(isAllowedExtensionOrigin('', windowOrigin: windowOrigin), isFalse);
+      expect(isAllowedExtensionOrigin('null', windowOrigin: 'null'), isFalse);
+      expect(isAllowedExtensionOrigin('', windowOrigin: ''), isFalse);
+    });
+  });
 }
 
 void verifyEventDirection(

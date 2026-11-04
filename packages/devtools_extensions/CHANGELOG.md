@@ -9,6 +9,7 @@ found in the LICENSE file or at https://developers.google.com/open-source/licens
 * Updates `devtools_shared` constraint to `^14.0.1`.
 * Add validation for `pubspec.yaml` existence and valid characters in the `config.yaml` `name` field to the `validate` command.
 * Remove the deprecated `--pwa-strategy` flag from the `build_and_copy` command.
+* Validate the origin and source window of incoming `postMessage` events in `ExtensionManager`.
 
 ## 0.5.1
 * Updates `devtools_app_shared` constraint to `^0.5.1`.

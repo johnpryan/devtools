@@ -7,6 +7,7 @@ import 'dart:js_interop';
 
 import 'package:devtools_app_shared/ui.dart';
 import 'package:devtools_app_shared/utils.dart';
+import 'package:devtools_app_shared/web_utils.dart';
 import 'package:devtools_extensions/api.dart';
 import 'package:devtools_extensions/utils.dart';
 import 'package:devtools_shared/devtools_shared.dart';
@@ -33,14 +34,14 @@ class EmbeddedExtension extends StatefulWidget {
 class _EmbeddedExtensionState extends State<EmbeddedExtension>
     with AutoDisposeMixin {
   late final EmbeddedExtensionControllerImpl _embeddedExtensionController;
-  late final _ExtensionIFrameController iFrameController;
+  late final ExtensionIFrameController iFrameController;
 
   @override
   void initState() {
     super.initState();
     _embeddedExtensionController =
         widget.controller as EmbeddedExtensionControllerImpl;
-    iFrameController = _ExtensionIFrameController(_embeddedExtensionController)
+    iFrameController = ExtensionIFrameController(_embeddedExtensionController)
       ..init();
   }
 
@@ -68,10 +69,11 @@ class _EmbeddedExtensionState extends State<EmbeddedExtension>
   }
 }
 
-class _ExtensionIFrameController extends DisposableController
+@visibleForTesting
+class ExtensionIFrameController extends DisposableController
     with AutoDisposeControllerMixin
     implements DevToolsExtensionHostInterface {
-  _ExtensionIFrameController(this.embeddedExtensionController);
+  ExtensionIFrameController(this.embeddedExtensionController);
 
   final EmbeddedExtensionControllerImpl embeddedExtensionController;
 
@@ -107,7 +109,7 @@ class _ExtensionIFrameController extends DisposableController
     _extensionHandlerReady = Completer<void>();
 
     unawaited(
-      embeddedExtensionController.extensionIFrame.onLoad.first.then((_) {
+      embeddedExtensionController.extensionIFrame?.onLoad.first.then((_) {
         _iFrameReady.complete();
       }),
     );
@@ -160,20 +162,24 @@ class _ExtensionIFrameController extends DisposableController
     await _iFrameReady.future;
     final message = event.toJson();
     assert(
-      embeddedExtensionController.extensionIFrame.contentWindow != null,
+      embeddedExtensionController.extensionIFrame?.contentWindow != null,
       'Something went wrong. The '
       '${embeddedExtensionController.extensionConfig.name} extension\'s iFrame '
       'contentWindow is null after the _iFrameReady future completed. The '
       'message that was being posted when the error occurred was:\n'
       '${message.toString()}',
     );
-    embeddedExtensionController.extensionIFrame.contentWindow!.postMessage(
+    embeddedExtensionController.extensionIFrame!.contentWindow!.postMessage(
       message.jsify(),
       embeddedExtensionController.extensionUrl.toJS,
     );
   }
 
   void _handleMessage(Event e) {
+    if (!e.isMessageEvent) return;
+    final messageEvent = e as MessageEvent;
+    if (!isAllowedMessageEvent(messageEvent)) return;
+
     final extensionEvent = tryParseExtensionEvent(e);
     if (extensionEvent != null) {
       onEventReceived(
@@ -183,6 +189,41 @@ class _ExtensionIFrameController extends DisposableController
         ),
       );
     }
+  }
+
+  /// Validates that [messageEvent] originated from the embedded extension's
+  /// expected origin and iFrame window.
+  @visibleForTesting
+  bool isAllowedMessageEvent(
+    MessageEvent messageEvent, {
+    String? expectedExtensionUrl,
+    EventTarget? expectedSource,
+  }) {
+    final expectedUri = Uri.tryParse(
+      expectedExtensionUrl ?? embeddedExtensionController.extensionUrl,
+    );
+    if (expectedUri != null &&
+        (expectedUri.isScheme('http') || expectedUri.isScheme('https'))) {
+      if (messageEvent.origin != expectedUri.origin) {
+        return false;
+      }
+    }
+
+    if (embeddedExtensionController.extensionIFrame?.contentWindow != null &&
+        messageEvent.source !=
+            embeddedExtensionController.extensionIFrame!.contentWindow) {
+      return false;
+    }
+
+    return isAllowedEmbeddedExtensionMessage(
+      eventOrigin: messageEvent.origin,
+      extensionUrl:
+          expectedExtensionUrl ?? embeddedExtensionController.extensionUrl,
+      eventSource: messageEvent.source,
+      expectedSource:
+          expectedSource ??
+          embeddedExtensionController.extensionIFrame?.contentWindow,
+    );
   }
 
   /// Sends [DevToolsExtensionEventType.ping] events to the extension until we

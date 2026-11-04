@@ -109,9 +109,9 @@ class EmbeddedExtensionControllerImpl extends EmbeddedExtensionController
     return Uri.parse(baseUri).replace(queryParameters: queryParams).toString();
   }
 
-  HTMLIFrameElement get extensionIFrame => _extensionIFrame;
+  HTMLIFrameElement? get extensionIFrame => _extensionIFrame;
 
-  late final HTMLIFrameElement _extensionIFrame;
+  HTMLIFrameElement? _extensionIFrame;
 
   /// A stream of [DevToolsExtensionEvent]s that will be posted from the
   /// DevTools web app to the embedded extension iFrame.
@@ -129,20 +129,21 @@ class EmbeddedExtensionControllerImpl extends EmbeddedExtensionController
     );
     _initialized = true;
 
-    _extensionIFrame = HTMLIFrameElement()
+    final iFrame = HTMLIFrameElement()
       // This url is safe because we built it ourselves and it does not include
       // any user input.
       ..src = extensionUrl
       ..allow = 'usb'
       ..sandbox.value = _extensionSandboxRules;
-    _extensionIFrame.style
+    iFrame.style
       ..border = 'none'
       ..height = '100%'
       ..width = '100%';
+    _extensionIFrame = iFrame;
 
     final registered = ui_web.platformViewRegistry.registerViewFactory(
       viewId,
-      (int viewId) => _extensionIFrame,
+      (int viewId) => iFrame,
     );
     assert(registered, 'Failed to register view factory for $viewId.');
   }

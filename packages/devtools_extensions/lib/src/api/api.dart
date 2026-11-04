@@ -5,7 +5,35 @@
 /// @docImport 'package:devtools_app/src/shared/globals.dart';
 library;
 
+import 'package:flutter/foundation.dart';
+
 import 'model.dart';
+
+/// Loopback hostnames that are considered valid local DevTools origins.
+const _loopbackHosts = {'localhost', '127.0.0.1', '::1', '[::1]'};
+
+/// Whether [origin] is a valid HTTP or HTTPS loopback origin (`localhost`,
+/// `127.0.0.1`, `[::1]`, or `::1`).
+@visibleForTesting
+bool isLoopbackOrigin(String origin) {
+  if (origin.isEmpty || origin == 'null') return false;
+  final uri = Uri.tryParse(origin);
+  if (uri == null || !uri.hasAuthority) return false;
+  if (!uri.isScheme('http') && !uri.isScheme('https')) return false;
+  return _loopbackHosts.contains(uri.host);
+}
+
+/// Whether [origin] is an allowed origin for messages received by a DevTools
+/// extension hosted at [windowOrigin].
+///
+/// The [origin] must be non-empty, not `'null'`, and either match
+/// [windowOrigin] or be a valid HTTP/HTTPS loopback origin (see
+/// [isLoopbackOrigin]).
+@visibleForTesting
+bool isAllowedExtensionOrigin(String origin, {required String windowOrigin}) {
+  if (origin.isEmpty || origin == 'null') return false;
+  return origin == windowOrigin || isLoopbackOrigin(origin);
+}
 
 /// Supported events that can be sent and received over 'postMessage' between
 /// DevTools and a DevTools extension running in an embedded iFrame.
