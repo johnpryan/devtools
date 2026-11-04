@@ -60,6 +60,10 @@ class ServerApi {
     DtdInfo? dtd,
   }) {
     api ??= ServerApi();
+    final validationError = _validateRequest(request, api);
+    if (validationError != null) {
+      return validationError;
+    }
     final queryParams = request.requestedUri.queryParameters;
     switch (request.url.path) {
       case apiNotifyForVmServiceConnection:
@@ -187,6 +191,86 @@ class ServerApi {
       default:
         return api.notImplemented();
     }
+  }
+
+  static shelf.Response? _validateRequest(
+    shelf.Request request,
+    ServerApi api,
+  ) {
+    if (request.method.toUpperCase() != 'POST') {
+      return shelf.Response(
+        HttpStatus.methodNotAllowed,
+        body: 'Method Not Allowed: POST required',
+      );
+    }
+
+    if (!_isLoopbackHost(request.requestedUri.host)) {
+      return api.forbidden('Invalid Host header');
+    }
+    final hostHeader = request.headers['host'];
+    if (hostHeader != null) {
+      final parsedHost = _parseHostHeader(hostHeader);
+      if (parsedHost == null || !_isLoopbackHost(parsedHost)) {
+        return api.forbidden('Invalid Host header');
+      }
+    }
+
+    final originHeader = request.headers['origin'];
+    if (originHeader != null) {
+      final originUri = Uri.tryParse(originHeader.trim());
+      if (originUri == null ||
+          (originUri.scheme != 'http' && originUri.scheme != 'https') ||
+          !_isLoopbackHost(originUri.host) ||
+          ((originUri.hasPort || request.requestedUri.hasPort) &&
+              originUri.port != request.requestedUri.port)) {
+        return api.forbidden('Invalid Origin header');
+      }
+    }
+
+    final secFetchSite = request.headers['sec-fetch-site']
+        ?.trim()
+        .toLowerCase();
+    if (secFetchSite != null &&
+        secFetchSite != 'same-origin' &&
+        secFetchSite != 'none') {
+      return api.forbidden('Cross-origin requests are not allowed');
+    }
+
+    return null;
+  }
+
+  /// Extracts the host component from an HTTP `Host` header value, stripping
+  /// any `:port` suffix and handling bracketed IPv6 addresses.
+  ///
+  /// Returns `null` if [hostHeader] is empty or malformed.
+  static String? _parseHostHeader(String hostHeader) {
+    final trimmed = hostHeader.trim();
+    if (trimmed.isEmpty) return null;
+    if (trimmed == '::1') return '::1';
+    final uri = Uri.tryParse('http://$trimmed');
+    if (uri == null ||
+        !uri.hasAuthority ||
+        uri.userInfo.isNotEmpty ||
+        uri.path.isNotEmpty ||
+        uri.hasQuery ||
+        uri.hasFragment) {
+      return null;
+    }
+    return uri.host;
+  }
+
+  /// Whether [host] is a valid loopback hostname or IP address (`localhost`,
+  /// `127.0.0.0/8`, or `::1`).
+  static bool _isLoopbackHost(String host) {
+    final normalized = host.toLowerCase();
+    if (normalized == 'localhost') {
+      return true;
+    }
+    final unbracketed = normalized.startsWith('[') && normalized.endsWith(']')
+        ? normalized.substring(1, normalized.length - 1)
+        : normalized;
+    final address = InternetAddress.tryParse(unbracketed);
+    return address != null && address.isLoopback;
   }
 
   static shelf.Response _encodeResponse(

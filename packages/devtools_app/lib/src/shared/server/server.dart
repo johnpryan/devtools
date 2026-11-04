@@ -92,6 +92,11 @@ Uri buildDevToolsServerRequestUri(String url) {
   return uri.replace(queryParameters: newParams);
 }
 
+/// Custom header sent on DevTools server API requests to force a CORS preflight
+/// `OPTIONS` request in browsers and prevent simple cross-origin `POST`
+/// requests.
+const _requestHeaders = <String, String>{'X-DevTools-Request': '1'};
+
 /// Helper to catch any server request which could fail.
 ///
 /// Returns HttpRequest or null (if server failure).
@@ -99,7 +104,10 @@ Future<Response?> request(String url) async {
   Response? response;
 
   try {
-    response = await post(buildDevToolsServerRequestUri(url));
+    response = await post(
+      buildDevToolsServerRequestUri(url),
+      headers: _requestHeaders,
+    );
   } catch (_) {}
 
   return response;

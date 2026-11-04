@@ -17,6 +17,127 @@ import '../helpers/helpers.dart';
 
 void main() {
   group('General DevTools server API', () {
+    group('request validation', () {
+      Future<Response> handleRequest({
+        String method = 'post',
+        Uri? uri,
+        Map<String, Object>? headers,
+      }) async {
+        final request = Request(
+          method,
+          uri ??
+              Uri(
+                scheme: 'https',
+                host: 'localhost',
+                port: 9100,
+                path: apiGetFlutterGAClientId,
+              ),
+          headers: headers,
+        );
+        return await server.ServerApi.handle(
+          request,
+          extensionsManager: ExtensionsManager(),
+          deeplinkManager: FakeDeeplinkManager(),
+        );
+      }
+
+      test('rejects GET requests with 405 Method Not Allowed', () async {
+        final response = await handleRequest(method: 'get');
+        expect(response.statusCode, HttpStatus.methodNotAllowed);
+        expect(
+          await response.readAsString(),
+          contains('Method Not Allowed: POST required'),
+        );
+      });
+
+      test('rejects non-loopback Host headers and requestedUri host', () async {
+        for (final invalidHost in [
+          'evil.example.com',
+          'evil.example.com:9100',
+          '127.evil.example.com',
+          '192.168.1.1',
+          'evil.example.com@localhost',
+        ]) {
+          final response = await handleRequest(headers: {'host': invalidHost});
+          expect(
+            response.statusCode,
+            HttpStatus.forbidden,
+            reason: 'Expected Host header "$invalidHost" to be rejected',
+          );
+        }
+
+        final nonLoopbackUriResponse = await handleRequest(
+          uri: Uri(
+            scheme: 'https',
+            host: 'evil.example.com',
+            port: 9100,
+            path: apiGetFlutterGAClientId,
+          ),
+        );
+        expect(nonLoopbackUriResponse.statusCode, HttpStatus.forbidden);
+      });
+
+      test(
+        'rejects non-loopback or mismatched-port Origin headers with 403 Forbidden',
+        () async {
+          for (final invalidOrigin in [
+            'https://evil.example.com',
+            'http://evil.example.com:9100',
+            'null',
+            'http://localhost:8888',
+            'http://127.0.0.1:8888',
+            'http://localhost',
+          ]) {
+            final response = await handleRequest(
+              headers: {'origin': invalidOrigin},
+            );
+            expect(
+              response.statusCode,
+              HttpStatus.forbidden,
+              reason: 'Expected Origin header "$invalidOrigin" to be rejected',
+            );
+          }
+        },
+      );
+
+      test('rejects Sec-Fetch-Site: cross-site with 403 Forbidden', () async {
+        final crossSiteResponse = await handleRequest(
+          headers: {'sec-fetch-site': 'cross-site'},
+        );
+        expect(crossSiteResponse.statusCode, HttpStatus.forbidden);
+
+        final sameSiteResponse = await handleRequest(
+          headers: {'sec-fetch-site': 'same-site'},
+        );
+        expect(sameSiteResponse.statusCode, HttpStatus.forbidden);
+      });
+
+      test(
+        'succeeds with valid loopback Host, matching loopback Origin, and Sec-Fetch-Site: same-origin',
+        () async {
+          for (final validHost in [
+            'localhost:9100',
+            '127.0.0.1:9100',
+            '127.0.1.1:9100',
+            '[::1]:9100',
+          ]) {
+            final response = await handleRequest(
+              headers: {
+                'host': validHost,
+                'origin': 'https://localhost:9100',
+                'sec-fetch-site': 'same-origin',
+              },
+            );
+            expect(
+              response.statusCode,
+              HttpStatus.ok,
+              reason: 'Expected valid Host "$validHost" to succeed',
+            );
+          }
+        },
+      );
+    });
+
     group(apiNotifyForVmServiceConnection, () {
       Future<Response> sendNotifyRequest({
         required DtdInfo? dtd,
@@ -24,7 +145,7 @@ void main() {
         // ignore: avoid-redundant-async, returning FutureOr.
       }) async {
         final request = Request(
-          'get',
+          'post',
           Uri(
             scheme: 'https',
             host: 'localhost',
