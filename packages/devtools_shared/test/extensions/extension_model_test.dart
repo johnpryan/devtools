@@ -114,19 +114,50 @@ void main() {
       expect(configWithMatchingPackage.packageName, 'foo');
       expect(configWithMatchingPackage.identifier, 'foo_1.0.0');
 
-      final configWithDistinctPackage = DevToolsExtensionConfig.parse({
-        'name': 'bar',
-        'packageName': 'foo',
-        'issueTracker': 'www.google.com',
-        'version': '1.0.0',
-        'materialIconCodePoint': 0xf012,
-        'extensionAssetsPath': '/absolute/path/to/foo/extension',
-        'devtoolsOptionsUri': 'file:///path/to/package/devtools_options.yaml',
-        'isPubliclyHosted': 'false',
-        'detectedFromStaticContext': 'false',
-      });
-      expect(configWithDistinctPackage.packageName, 'foo');
-      expect(configWithDistinctPackage.identifier, 'foo_bar_1.0.0');
+      expect(
+        () => DevToolsExtensionConfig.parse({
+          'name': 'bar',
+          'packageName': 'foo',
+          'issueTracker': 'www.google.com',
+          'version': '1.0.0',
+          'materialIconCodePoint': 0xf012,
+          'extensionAssetsPath': '/absolute/path/to/foo/extension',
+          'devtoolsOptionsUri': 'file:///path/to/package/devtools_options.yaml',
+          'isPubliclyHosted': 'false',
+          'detectedFromStaticContext': 'false',
+        }),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'mismatched packageName StateError',
+            'The "name" field in the extension config.yaml ("bar") must match '
+                'the package name ("foo") that this extension belongs to.',
+          ),
+        ),
+      );
+
+      expect(
+        () => DevToolsExtensionConfig.parse({
+          'name': 'preview',
+          'packageName': 'device',
+          'issueTracker': 'www.google.com',
+          'version': '1.0.0',
+          'materialIconCodePoint': 0xf012,
+          'extensionAssetsPath': '/absolute/path/to/device/extension',
+          'devtoolsOptionsUri': 'file:///path/to/package/devtools_options.yaml',
+          'isPubliclyHosted': 'false',
+          'detectedFromStaticContext': 'false',
+        }),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'mismatched packageName StateError',
+            'The "name" field in the extension config.yaml ("preview") must '
+                'match the package name ("device") that this extension '
+                'belongs to.',
+          ),
+        ),
+      );
     });
 
     group('parse throws when missing required field', () {
@@ -387,6 +418,55 @@ void main() {
           'detectedFromStaticContext': 'false',
         });
       }, throwsInvalidNameError());
+    });
+
+    test('parses valid semver version and throws for invalid version', () {
+      for (final validVersion in ['1.0.0', '0.1.0-dev.1+2']) {
+        final config = DevToolsExtensionConfig.parse({
+          'name': 'foo',
+          'packageName': 'foo',
+          'issueTracker': 'www.google.com',
+          'version': validVersion,
+          'materialIconCodePoint': 0xf012,
+          'extensionAssetsPath': '/absolute/path/to/foo/extension',
+          'devtoolsOptionsUri': 'file:///path/to/package/devtools_options.yaml',
+          'isPubliclyHosted': 'false',
+          'detectedFromStaticContext': 'false',
+        });
+        expect(config.version, validVersion);
+        expect(config.identifier, 'foo_$validVersion');
+      }
+
+      for (final invalidVersion in [
+        'bar_2.0.0',
+        '1.0',
+        '1.0.0_1',
+        '../1.0.0',
+      ]) {
+        expect(
+          () => DevToolsExtensionConfig.parse({
+            'name': 'foo',
+            'packageName': 'foo',
+            'issueTracker': 'www.google.com',
+            'version': invalidVersion,
+            'materialIconCodePoint': 0xf012,
+            'extensionAssetsPath': '/absolute/path/to/foo/extension',
+            'devtoolsOptionsUri':
+                'file:///path/to/package/devtools_options.yaml',
+            'isPubliclyHosted': 'false',
+            'detectedFromStaticContext': 'false',
+          }),
+          throwsA(
+            isA<StateError>().having(
+              (e) => e.message,
+              'invalid version StateError',
+              'The "version" field in the extension config.yaml '
+                  '("$invalidVersion") must be a valid semantic version '
+                  '(e.g. 1.0.0).',
+            ),
+          ),
+        );
+      }
     });
   });
 }

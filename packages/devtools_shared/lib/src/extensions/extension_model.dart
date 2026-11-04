@@ -60,6 +60,22 @@ class DevToolsExtensionConfig implements Comparable<DevToolsExtensionConfig> {
           'package name this extension belongs to.',
         );
       }
+      if (packageName.isNotEmpty && name != packageName) {
+        throw StateError(
+          'The "name" field in the extension config.yaml ("$name") must match '
+          'the package name ("$packageName") that this extension belongs to.',
+        );
+      }
+
+      final semverRegExp = RegExp(
+        r'^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$',
+      );
+      if (!semverRegExp.hasMatch(version)) {
+        throw StateError(
+          'The "version" field in the extension config.yaml ("$version") must '
+          'be a valid semantic version (e.g. 1.0.0).',
+        );
+      }
 
       // Defaults to the code point for [Icons.extensions_outlined] if parsing
       // fails.
@@ -241,9 +257,7 @@ class DevToolsExtensionConfig implements Comparable<DevToolsExtensionConfig> {
 
   String get displayName => name.toLowerCase();
 
-  String get identifier => packageName == displayName
-      ? '${displayName}_$version'
-      : '${packageName}_${displayName}_$version';
+  String get identifier => '${displayName}_$version';
 
   String get analyticsSafeName => isPubliclyHosted ? name : 'private';
 

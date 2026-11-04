@@ -92,5 +92,83 @@ environment:
         tempDir.deleteSync(recursive: true);
       }
     });
+
+    test('when config.yaml name does not match pubspec.yaml name', () async {
+      final tempDir = Directory.systemTemp.createTempSync();
+      try {
+        final extDir = Directory(p.join(tempDir.path, 'extension', 'devtools'))
+          ..createSync(recursive: true);
+        Directory(p.join(extDir.path, 'build')).createSync(recursive: true);
+        File(p.join(extDir.path, 'build', 'index.html')).writeAsStringSync('');
+        File(p.join(extDir.path, 'config.yaml')).writeAsStringSync('''
+name: mismatched_extension_name
+issueTracker: https://www.google.com/
+version: 1.0.0
+materialIconCodePoint: "0xe50a"
+''');
+        File(p.join(tempDir.path, 'pubspec.yaml')).writeAsStringSync('''
+name: actual_package_name
+environment:
+  sdk: ^3.2.0
+''');
+
+        final process = await Process.run('dart', [
+          'run',
+          'devtools_extensions',
+          'validate',
+          '-p',
+          tempDir.path,
+        ]);
+        expect(
+          process.stderr,
+          contains(
+            'Validation error: The "name" field in config.yaml '
+            '("mismatched_extension_name") must match the "name" field in '
+            'pubspec.yaml ("actual_package_name").',
+          ),
+        );
+      } finally {
+        tempDir.deleteSync(recursive: true);
+      }
+    });
+
+    test('when config.yaml version is not a valid semantic version', () async {
+      final tempDir = Directory.systemTemp.createTempSync();
+      try {
+        final extDir = Directory(p.join(tempDir.path, 'extension', 'devtools'))
+          ..createSync(recursive: true);
+        Directory(p.join(extDir.path, 'build')).createSync(recursive: true);
+        File(p.join(extDir.path, 'build', 'index.html')).writeAsStringSync('');
+        File(p.join(extDir.path, 'config.yaml')).writeAsStringSync('''
+name: actual_package_name
+issueTracker: https://www.google.com/
+version: bar_2.0.0
+materialIconCodePoint: "0xe50a"
+''');
+        File(p.join(tempDir.path, 'pubspec.yaml')).writeAsStringSync('''
+name: actual_package_name
+environment:
+  sdk: ^3.2.0
+''');
+
+        final process = await Process.run('dart', [
+          'run',
+          'devtools_extensions',
+          'validate',
+          '-p',
+          tempDir.path,
+        ]);
+        expect(
+          process.stderr,
+          contains(
+            'Validation error: The "version" field in the extension '
+            'config.yaml ("bar_2.0.0") must be a valid semantic version '
+            '(e.g. 1.0.0).',
+          ),
+        );
+      } finally {
+        tempDir.deleteSync(recursive: true);
+      }
+    });
   });
 }

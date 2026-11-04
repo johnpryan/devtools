@@ -25,7 +25,7 @@ void main() {
         DevToolsExtensionConfig.nameKey: 'bar',
         DevToolsExtensionConfig.packageNameKey: 'bar',
         DevToolsExtensionConfig.issueTrackerKey: 'www.google.com',
-        DevToolsExtensionConfig.versionKey: 'this-will-not-parse',
+        DevToolsExtensionConfig.versionKey: '1.0.0-this-will-not-parse',
         DevToolsExtensionConfig.materialIconCodePointKey: 0xe638,
         DevToolsExtensionConfig.requiresConnectionKey: 'false',
         DevToolsExtensionConfig.extensionAssetsPathKey: '/absolute/path/to/bar',
@@ -67,7 +67,7 @@ void main() {
         DevToolsExtensionConfig.nameKey: 'bar',
         DevToolsExtensionConfig.packageNameKey: 'bar',
         DevToolsExtensionConfig.issueTrackerKey: 'www.google.com',
-        DevToolsExtensionConfig.versionKey: 'this-will-not-parse',
+        DevToolsExtensionConfig.versionKey: '1.0.0-this-will-not-parse',
         DevToolsExtensionConfig.materialIconCodePointKey: 0xe638,
         DevToolsExtensionConfig.requiresConnectionKey: 'false',
         DevToolsExtensionConfig.extensionAssetsPathKey: '/path/to/bar',
@@ -82,7 +82,7 @@ void main() {
         DevToolsExtensionConfig.nameKey: 'bar',
         DevToolsExtensionConfig.packageNameKey: 'bar',
         DevToolsExtensionConfig.issueTrackerKey: 'www.google.com',
-        DevToolsExtensionConfig.versionKey: 'this-will-not-parse',
+        DevToolsExtensionConfig.versionKey: '1.0.0-this-will-not-parse',
         DevToolsExtensionConfig.materialIconCodePointKey: 0xe638,
         DevToolsExtensionConfig.requiresConnectionKey: 'false',
         DevToolsExtensionConfig.extensionAssetsPathKey: '/absolute/path/to/bar',
@@ -95,7 +95,7 @@ void main() {
         DevToolsExtensionConfig.nameKey: 'bar',
         DevToolsExtensionConfig.packageNameKey: 'bar',
         DevToolsExtensionConfig.issueTrackerKey: 'www.google.com',
-        DevToolsExtensionConfig.versionKey: 'this-will-not-parse',
+        DevToolsExtensionConfig.versionKey: '1.0.0-this-will-not-parse',
         DevToolsExtensionConfig.materialIconCodePointKey: 0xe638,
         DevToolsExtensionConfig.requiresConnectionKey: 'false',
         DevToolsExtensionConfig.extensionAssetsPathKey: '/absolute/path/to/bar',
@@ -168,14 +168,14 @@ void main() {
         DevToolsExtensionConfig.isPubliclyHostedKey: 'false',
         DevToolsExtensionConfig.detectedFromStaticContextKey: 'true',
       });
-      final spoofedExt = DevToolsExtensionConfig.parse({
-        DevToolsExtensionConfig.nameKey: 'provider',
-        DevToolsExtensionConfig.packageNameKey: 'bad_pkg',
+      final otherExt = DevToolsExtensionConfig.parse({
+        DevToolsExtensionConfig.nameKey: 'other_pkg',
+        DevToolsExtensionConfig.packageNameKey: 'other_pkg',
         DevToolsExtensionConfig.issueTrackerKey: 'www.google.com',
         DevToolsExtensionConfig.versionKey: '999.0.0',
         DevToolsExtensionConfig.materialIconCodePointKey: 0xe638,
         DevToolsExtensionConfig.requiresConnectionKey: 'false',
-        DevToolsExtensionConfig.extensionAssetsPathKey: '/path/to/bad_pkg',
+        DevToolsExtensionConfig.extensionAssetsPathKey: '/path/to/other_pkg',
         DevToolsExtensionConfig.devtoolsOptionsUriKey:
             'file:///path/to/options',
         DevToolsExtensionConfig.isPubliclyHostedKey: 'false',
@@ -183,7 +183,7 @@ void main() {
       });
 
       deduplicateExtensionsAndTakeLatest(
-        [providerExt, spoofedExt],
+        [providerExt, otherExt],
         onSetIgnored: (ext, {required ignore}) {
           if (ignore) {
             ignored.add(ext);

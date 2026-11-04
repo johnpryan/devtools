@@ -45,7 +45,7 @@ class ValidateExtensionCommand extends Command {
     try {
       // TODO(kenz): try to use the the existing pub validator for this check. See
       // https://github.com/dart-lang/pub/blob/master/lib/src/validator/devtools_extension.dart.
-      _validateDirectoryContents(packagePath);
+      final packageName = _validateDirectoryContents(packagePath);
 
       // Try to parse the config.yaml file. This will throw an exception if there
       // are parsing errors.
@@ -53,7 +53,7 @@ class ValidateExtensionCommand extends Command {
         ..._configAsMap(packagePath),
         // These are generated on the DevTools server, so pass in stubbed
         // values for the sake of validation.
-        DevToolsExtensionConfig.packageNameKey: '',
+        DevToolsExtensionConfig.packageNameKey: packageName,
         DevToolsExtensionConfig.extensionAssetsPathKey: '',
         DevToolsExtensionConfig.devtoolsOptionsUriKey: '',
         DevToolsExtensionConfig.isPubliclyHostedKey: 'false',
@@ -73,7 +73,7 @@ class ValidateExtensionCommand extends Command {
   }
 }
 
-void _validateDirectoryContents(String packagePath) {
+String _validateDirectoryContents(String packagePath) {
   final packageDirectory = Directory(packagePath);
   if (!packageDirectory.existsSync()) {
     throw FileSystemException('${packageDirectory.path} directory not found');
@@ -85,6 +85,11 @@ void _validateDirectoryContents(String packagePath) {
 A pubspec.yaml file is required, but none was found.
 See ${ValidateExtensionCommand.docUrl}.
 ''');
+  }
+  final pubspecYaml = loadYaml(pubspecFile.readAsStringSync()) as YamlMap?;
+  final packageName = pubspecYaml?['name'] as String?;
+  if (packageName == null || packageName.isEmpty) {
+    throw StateError('Missing "name" field in pubspec.yaml.');
   }
 
   final devtoolsExtensionDir = Directory(
@@ -129,6 +134,13 @@ See ${ValidateExtensionCommand.docUrl}.
       'numbers, and underscores but instead was "$configName".',
     );
   }
+  if (configName != packageName) {
+    throw StateError(
+      'The "name" field in config.yaml ("$configName") must match the "name" '
+      'field in pubspec.yaml ("$packageName").',
+    );
+  }
+  return packageName;
 }
 
 Map<String, Object?> _configAsMap(String packagePath) {

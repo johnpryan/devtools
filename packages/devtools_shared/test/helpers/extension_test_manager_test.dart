@@ -178,6 +178,33 @@ materialIconCodePoint: 58634
 
 ''');
     });
+
+    test('$collidingExtensionPackage', () {
+      expect(collidingExtensionPackage.name, 'preview');
+      expect(collidingExtensionPackage.packageName, 'device');
+      expect(collidingExtensionPackage.issueTracker, 'https://www.google.com/');
+      expect(collidingExtensionPackage.version, '1.0.0');
+      expect(collidingExtensionPackage.materialIconCodePoint, 0xe50a);
+      expect(collidingExtensionPackage.requiresConnection, true);
+      expect(collidingExtensionPackage.isPubliclyHosted, false);
+      expect(collidingExtensionPackage.packageVersion, null);
+      expect(
+        collidingExtensionPackage.relativePathFromExtensions,
+        collidingExtensionPackage.packageName,
+      );
+      expect(collidingExtensionPackage.pubspecContent, '''
+name: device
+environment:
+  sdk: ">=3.4.0-282.1.beta <4.0.0"
+''');
+      expect(collidingExtensionPackage.configYamlContent, '''
+name: preview
+issueTracker: https://www.google.com/
+version: 1.0.0
+materialIconCodePoint: 58634
+
+''');
+    });
   });
 
   group('$TestPackage', () {

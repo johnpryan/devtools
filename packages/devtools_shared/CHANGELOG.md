@@ -7,6 +7,8 @@ found in the LICENSE file or at https://developers.google.com/open-source/licens
 
 * Track providing package name for DevTools extensions to isolate extension enablement,
   deduplication, and asset loading.
+* Validate that the `name` field in DevTools extension `config.yaml` matches the
+  providing package name and that the `version` field is a valid semantic version.
 * Validate `rootPath`, `buildVariant`, `configuration`, and `target` parameters in
   `DeeplinkManager`.
 * Add `UniversalLinkSettings.fromErrorJson`, `UniversalLinkSettings.error`, and

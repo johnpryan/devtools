@@ -116,11 +116,12 @@ void main() {
     });
 
     test(
-      'spoofed extension is isolated by packageName and cannot overwrite legitimate extension',
+      'spoofed and colliding extensions with mismatched packageName are rejected',
       () async {
         await initializeTestDirectory(includeSpoofedExtension: true);
         final response = await serveExtensions(extensionsManager);
         expect(response.statusCode, HttpStatus.ok);
+        _verifyAllExtensions(extensionsManager);
 
         // Verify that the legitimate provider extension is present.
         final providerExtension = extensionsManager.devtoolsExtensions
@@ -128,23 +129,42 @@ void main() {
         expect(providerExtension, isNotNull);
         expect(providerExtension!.name, 'provider');
         expect(providerExtension.version, providerPackage.version);
-
-        // Verify that the spoofed extension from bad_pkg is isolated under packageName 'bad_pkg'.
-        final spoofedExtension = extensionsManager.devtoolsExtensions
-            .firstWhereOrNull((e) => e.packageName == 'bad_pkg');
-        expect(spoofedExtension, isNotNull);
-        expect(spoofedExtension!.name, 'provider');
-        expect(spoofedExtension.version, '999.0.0');
-        expect(spoofedExtension.identifier, 'bad_pkg_provider_999.0.0');
-
-        // Verify lookupLocationFor returns the respective paths without collision.
         expect(
           extensionsManager.lookupLocationFor(providerExtension.identifier),
           providerExtension.extensionAssetsPath,
         );
+
+        // Verify that the spoofed extension from bad_pkg (name: 'provider') and
+        // the colliding extension from device (name: 'preview') are rejected.
+        final spoofedExtension = extensionsManager.devtoolsExtensions
+            .firstWhereOrNull((e) => e.packageName == 'bad_pkg');
+        expect(spoofedExtension, isNull);
+        final collidingExtension = extensionsManager.devtoolsExtensions
+            .firstWhereOrNull((e) => e.packageName == 'device');
+        expect(collidingExtension, isNull);
+
+        final parsedResponse =
+            json.decode(await response.readAsString()) as Map;
+        final warning =
+            parsedResponse[ExtensionsApi.extensionsResultWarningPropertyName];
         expect(
-          extensionsManager.lookupLocationFor(spoofedExtension.identifier),
-          spoofedExtension.extensionAssetsPath,
+          warning,
+          contains('Encountered errors while parsing extension config.yaml'),
+        );
+        expect(
+          warning,
+          contains(
+            'The "name" field in the extension config.yaml ("provider") must '
+            'match the package name ("bad_pkg") that this extension belongs '
+            'to.',
+          ),
+        );
+        expect(
+          warning,
+          contains(
+            'The "name" field in the extension config.yaml ("preview") must '
+            'match the package name ("device") that this extension belongs to.',
+          ),
         );
       },
     );

@@ -256,7 +256,10 @@ resolution: workspace
     _setupExtension(newerStaticExtension1Package);
 
     if (includeBadExtension) _setupExtension(badExtensionPackage);
-    if (includeSpoofedExtension) _setupExtension(spoofedExtensionPackage);
+    if (includeSpoofedExtension) {
+      _setupExtension(spoofedExtensionPackage);
+      _setupExtension(collidingExtensionPackage);
+    }
   }
 
   void _setupPackage(TestPackage package, {bool isRuntimeRoot = false}) {
@@ -326,7 +329,11 @@ final myAppPackageWithBadExtension = TestPackage(
 );
 final myAppPackageWithSpoofedExtension = TestPackage(
   name: myAppPackage.name,
-  dependencies: [...myAppPackage.dependencies, spoofedExtensionPackage],
+  dependencies: [
+    ...myAppPackage.dependencies,
+    spoofedExtensionPackage,
+    collidingExtensionPackage,
+  ],
 );
 final otherRoot1Package = TestPackage(
   name: 'other_root_1',
@@ -409,6 +416,16 @@ final spoofedExtensionPackage = TestPackageWithExtension(
   packageName: 'bad_pkg',
   issueTracker: 'https://www.google.com/',
   version: '999.0.0',
+  materialIconCodePoint: 0xe50a,
+  requiresConnection: true,
+  isPubliclyHosted: false,
+  packageVersion: null,
+);
+final collidingExtensionPackage = TestPackageWithExtension(
+  name: 'preview',
+  packageName: 'device',
+  issueTracker: 'https://www.google.com/',
+  version: '1.0.0',
   materialIconCodePoint: 0xe50a,
   requiresConnection: true,
   isPubliclyHosted: false,
