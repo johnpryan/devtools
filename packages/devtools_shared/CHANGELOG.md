@@ -11,6 +11,9 @@ found in the LICENSE file or at https://developers.google.com/open-source/licens
   `DeeplinkManager`.
 * Add `UniversalLinkSettings.fromErrorJson`, `UniversalLinkSettings.error`, and
   `UniversalLinkSettings.error` getter to surface iOS universal link settings errors.
+* Reject `file://` URIs with non-empty hosts (UNC paths), absolute `buildLocation`
+  paths, and symbolic links resolving outside the extension build or package root
+  in `ExtensionsManager`.
 
 # 14.0.0
 

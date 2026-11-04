@@ -60,6 +60,7 @@ void main() {
   Future<Response> serveExtensions(
     ExtensionsManager manager, {
     bool includeRuntimeRoot = true,
+    String? packageRootUriOverride,
   }) async {
     final request = Request(
       'post',
@@ -68,9 +69,9 @@ void main() {
         host: 'localhost',
         path: ExtensionsApi.apiServeAvailableExtensions,
         queryParameters: {
-          ExtensionsApi.packageRootUriPropertyName: includeRuntimeRoot
-              ? extensionTestManager.runtimeAppRoot
-              : null,
+          ExtensionsApi.packageRootUriPropertyName:
+              packageRootUriOverride ??
+              (includeRuntimeRoot ? extensionTestManager.runtimeAppRoot : null),
         },
       ),
     );
@@ -175,6 +176,156 @@ void main() {
             json.decode(await response.readAsString()) as Map;
         final error = parsedResponse['error'];
         expect(error, contains('Fake exception for test'));
+      },
+    );
+
+    test('rejects packageRootUri with non-empty host (UNC path)', () async {
+      await initializeTestDirectory();
+      const uncUri = 'file://remotehost/share/app';
+      final response = await serveExtensions(
+        extensionsManager,
+        packageRootUriOverride: uncUri,
+      );
+      expect(response.statusCode, HttpStatus.badRequest);
+      expect(extensionsManager.devtoolsExtensions, isEmpty);
+
+      await expectLater(
+        extensionsManager.serveAvailableExtensions(uncUri, <String>[], null),
+        throwsArgumentError,
+      );
+    });
+
+    test('rejects extension config.yaml with absolute buildLocation', () async {
+      await initializeTestDirectory();
+      final posixAbsConfigFile = File(
+        p.join(
+          extensionTestManager.testDirectory.path,
+          'extensions',
+          staticExtension2Package.relativePathFromExtensions,
+          'extension',
+          'devtools',
+          'config.yaml',
+        ),
+      );
+      posixAbsConfigFile.writeAsStringSync(
+        '${staticExtension2Package.configYamlContent}\nbuildLocation: /tmp\n',
+        flush: true,
+      );
+
+      final windowsAbsConfigFile = File(
+        p.join(
+          extensionTestManager.testDirectory.path,
+          'extensions',
+          newerStaticExtension1Package.relativePathFromExtensions,
+          'extension',
+          'devtools',
+          'config.yaml',
+        ),
+      );
+      windowsAbsConfigFile.writeAsStringSync(
+        '${newerStaticExtension1Package.configYamlContent}\n'
+        r'buildLocation: C:\'
+        '\n',
+        flush: true,
+      );
+
+      final response = await serveExtensions(extensionsManager);
+      expect(response.statusCode, HttpStatus.ok);
+      expect(
+        extensionsManager.devtoolsExtensions.where(
+          (e) => e.packageName == staticExtension2Package.packageName,
+        ),
+        isEmpty,
+      );
+      expect(
+        extensionsManager.devtoolsExtensions.where(
+          (e) =>
+              e.packageName == newerStaticExtension1Package.packageName &&
+              e.version == newerStaticExtension1Package.version,
+        ),
+        isEmpty,
+      );
+
+      final parsedResponse = json.decode(await response.readAsString()) as Map;
+      final warning =
+          parsedResponse[ExtensionsApi.extensionsResultWarningPropertyName]
+              as String;
+      expect(
+        warning,
+        contains('Encountered errors while parsing extension config.yaml'),
+      );
+      expect(warning, contains('must be a relative path'));
+    });
+
+    test(
+      'rejects extension with symlink pointing outside build directory',
+      () async {
+        await initializeTestDirectory();
+        final secretFile = File(
+          p.join(extensionTestManager.testDirectory.path, 'secret.txt'),
+        )..writeAsStringSync('top secret', flush: true);
+
+        final extensionBuildDir = Directory(
+          p.join(
+            extensionTestManager.testDirectory.path,
+            'extensions',
+            staticExtension2Package.relativePathFromExtensions,
+            'extension',
+            'devtools',
+            'build',
+          ),
+        );
+        Link(
+          p.join(extensionBuildDir.path, 'secret_link.txt'),
+        ).createSync(secretFile.path);
+
+        final outsideBuildDir = Directory(
+          p.join(extensionTestManager.testDirectory.path, 'outside_build'),
+        )..createSync(recursive: true);
+        final newerBuildDir = Directory(
+          p.join(
+            extensionTestManager.testDirectory.path,
+            'extensions',
+            newerStaticExtension1Package.relativePathFromExtensions,
+            'extension',
+            'devtools',
+            'build',
+          ),
+        );
+        newerBuildDir.deleteSync(recursive: true);
+        Link(newerBuildDir.path).createSync(outsideBuildDir.path);
+
+        final response = await serveExtensions(extensionsManager);
+        expect(response.statusCode, HttpStatus.ok);
+        expect(
+          extensionsManager.devtoolsExtensions.where(
+            (e) => e.packageName == staticExtension2Package.packageName,
+          ),
+          isEmpty,
+        );
+        expect(
+          extensionsManager.devtoolsExtensions.where(
+            (e) =>
+                e.packageName == newerStaticExtension1Package.packageName &&
+                e.version == newerStaticExtension1Package.version,
+          ),
+          isEmpty,
+        );
+
+        final parsedResponse =
+            json.decode(await response.readAsString()) as Map;
+        final warning =
+            parsedResponse[ExtensionsApi.extensionsResultWarningPropertyName]
+                as String;
+        expect(
+          warning,
+          contains('Encountered errors while parsing extension config.yaml'),
+        );
+        expect(
+          warning,
+          contains('contains a symlink pointing outside the build directory'),
+        );
+        expect(warning, contains('resolves outside package root'));
       },
     );
   });

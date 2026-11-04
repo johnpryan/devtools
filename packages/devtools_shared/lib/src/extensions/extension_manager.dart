@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file or at https://developers.google.com/open-source/licenses/bsd.
 
+import 'dart:io';
+
 import 'package:collection/collection.dart';
 import 'package:dtd/dtd.dart';
 import 'package:extension_discovery/extension_discovery.dart';
@@ -161,6 +163,16 @@ class ExtensionsManager {
       final relativeExtensionLocation =
           config['buildLocation'] as String? ?? 'build';
 
+      if (path.isAbsolute(relativeExtensionLocation) ||
+          path.posix.isAbsolute(relativeExtensionLocation) ||
+          path.windows.isAbsolute(relativeExtensionLocation)) {
+        parsingErrors.writeln(
+          'Ignoring extension from package "${extension.package}": invalid '
+          'buildLocation "$relativeExtensionLocation" must be a relative path.',
+        );
+        continue;
+      }
+
       final packageRoot = path.normalize(extension.rootUri.toFilePath());
       final location = path.normalize(
         path.join(
@@ -183,6 +195,81 @@ class ExtensionsManager {
           'buildLocation "$relativeExtensionLocation" outside package root.',
         );
         continue;
+      }
+
+      if (FileSystemEntity.isLinkSync(location) &&
+          !Directory(location).existsSync()) {
+        parsingErrors.writeln(
+          'Ignoring extension from package "${extension.package}": invalid '
+          'buildLocation "$relativeExtensionLocation" is a broken or '
+          'non-directory symlink.',
+        );
+        continue;
+      }
+
+      if (Directory(packageRoot).existsSync() &&
+          Directory(location).existsSync()) {
+        final String resolvedPackageRoot;
+        final String resolvedLocation;
+        try {
+          resolvedPackageRoot = path.normalize(
+            Directory(packageRoot).resolveSymbolicLinksSync(),
+          );
+          resolvedLocation = path.normalize(
+            Directory(location).resolveSymbolicLinksSync(),
+          );
+        } on FileSystemException catch (e) {
+          parsingErrors.writeln(
+            'Ignoring extension from package "${extension.package}": failed '
+            'to resolve symbolic links for buildLocation '
+            '"$relativeExtensionLocation" ($e).',
+          );
+          continue;
+        }
+
+        if (!path.isWithin(resolvedPackageRoot, resolvedLocation)) {
+          parsingErrors.writeln(
+            'Ignoring extension from package "${extension.package}": invalid '
+            'buildLocation "$relativeExtensionLocation" resolves outside '
+            'package root.',
+          );
+          continue;
+        }
+
+        var hasInvalidSymlink = false;
+        for (final entry in Directory(
+          location,
+        ).listSync(recursive: true, followLinks: false)) {
+          String? resolvedTarget;
+          try {
+            if (File(entry.path).existsSync()) {
+              resolvedTarget = path.normalize(
+                File(entry.path).resolveSymbolicLinksSync(),
+              );
+            } else if (Directory(entry.path).existsSync()) {
+              resolvedTarget = path.normalize(
+                Directory(entry.path).resolveSymbolicLinksSync(),
+              );
+            }
+          } on FileSystemException {
+            resolvedTarget = null;
+          }
+
+          if (resolvedTarget == null ||
+              (!path.isWithin(resolvedLocation, resolvedTarget) &&
+                  !path.equals(resolvedLocation, resolvedTarget))) {
+            parsingErrors.writeln(
+              'Ignoring extension from package "${extension.package}": '
+              'extension build directory contains a symlink pointing outside '
+              'the build directory ("${entry.path}").',
+            );
+            hasInvalidSymlink = true;
+            break;
+          }
+        }
+        if (hasInvalidSymlink) {
+          continue;
+        }
       }
 
       try {
@@ -211,8 +298,17 @@ class ExtensionsManager {
   }
 
   void _assertUriFormat(String? uriString) {
-    if (uriString != null && !uriString.startsWith('file://')) {
-      throw ArgumentError.value(uriString, 'must be a file:// URI String');
+    if (uriString == null) return;
+    final uri = Uri.tryParse(uriString);
+    if (!uriString.startsWith('file://') ||
+        uri == null ||
+        uri.scheme != 'file' ||
+        uri.host.isNotEmpty) {
+      throw ArgumentError.value(
+        uriString,
+        'uriString',
+        'must be a file:// URI String with an empty host',
+      );
     }
   }
 
