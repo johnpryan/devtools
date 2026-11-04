@@ -11,6 +11,8 @@ found in the LICENSE file or at https://developers.google.com/open-source/licens
   `DeeplinkManager`.
 * Add `UniversalLinkSettings.fromErrorJson`, `UniversalLinkSettings.error`, and
   `UniversalLinkSettings.error` getter to surface iOS universal link settings errors.
+* Require `POST` method and validate `Host`, `Origin`, and `Sec-Fetch-Site` headers in
+  `ServerApi.handle` to prevent cross-site and DNS rebinding requests.
 
 # 14.0.0
 
