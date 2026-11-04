@@ -9,6 +9,7 @@ import 'package:devtools_shared/devtools_shared.dart';
 import 'package:devtools_shared/src/extensions/extension_manager.dart';
 import 'package:devtools_shared/src/server/server_api.dart' as server;
 import 'package:dtd/dtd.dart';
+import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart';
 import 'package:test/test.dart';
 
@@ -105,11 +106,11 @@ void main() {
       });
 
       group('updateDtdWorkspaceRoots', () {
-        Future<void> updateWorkspaceRoots({
+        Future<Response> updateWorkspaceRoots({
           required Uri root,
           required bool connected,
         }) async {
-          await server.VmServiceHandler.updateDtdWorkspaceRoots(
+          return await server.VmServiceHandler.updateDtdWorkspaceRoots(
             testDtdConnection!,
             dtdConnectionInfo: dtd!.info!,
             rootFromVmService: root,
@@ -126,27 +127,115 @@ void main() {
         }
 
         test('adds and removes workspace roots', () async {
-          await verifyWorkspaceRoots({});
-          final rootUri1 = Uri.parse('file:///Users/me/package_root_1');
-          final rootUri2 = Uri.parse('file:///Users/me/package_root_2');
+          final tempDir1 = Directory.systemTemp.createTempSync(
+            'package_root_1_',
+          );
+          final tempDir2 = Directory.systemTemp.createTempSync(
+            'package_root_2_',
+          );
+          File(p.join(tempDir1.path, 'pubspec.yaml')).createSync();
+          Directory(p.join(tempDir2.path, '.dart_tool')).createSync();
+          addTearDown(() async {
+            await deleteDirectoryWithRetry(tempDir1);
+            await deleteDirectoryWithRetry(tempDir2);
+          });
 
-          await updateWorkspaceRoots(root: rootUri1, connected: true);
+          await verifyWorkspaceRoots({});
+          final rootUri1 = Uri.file(tempDir1.path);
+          final rootUri2 = Uri.file(tempDir2.path);
+
+          var response = await updateWorkspaceRoots(
+            root: rootUri1,
+            connected: true,
+          );
+          expect(response.statusCode, HttpStatus.ok);
           await verifyWorkspaceRoots({rootUri1});
 
           // Add a second root and verify the roots are unioned.
-          await updateWorkspaceRoots(root: rootUri2, connected: true);
+          response = await updateWorkspaceRoots(
+            root: rootUri2,
+            connected: true,
+          );
+          expect(response.statusCode, HttpStatus.ok);
           await verifyWorkspaceRoots({rootUri1, rootUri2});
 
           // Verify duplicates cannot be added.
-          await updateWorkspaceRoots(root: rootUri2, connected: true);
+          response = await updateWorkspaceRoots(
+            root: rootUri2,
+            connected: true,
+          );
+          expect(response.statusCode, HttpStatus.ok);
           await verifyWorkspaceRoots({rootUri1, rootUri2});
 
           // Verify roots are removed for disconnect events.
-          await updateWorkspaceRoots(root: rootUri2, connected: false);
+          response = await updateWorkspaceRoots(
+            root: rootUri2,
+            connected: false,
+          );
+          expect(response.statusCode, HttpStatus.ok);
           await verifyWorkspaceRoots({rootUri1});
-          await updateWorkspaceRoots(root: rootUri1, connected: false);
+          response = await updateWorkspaceRoots(
+            root: rootUri1,
+            connected: false,
+          );
+          expect(response.statusCode, HttpStatus.ok);
           await verifyWorkspaceRoots({});
         }, timeout: const Timeout.factor(4));
+
+        test('rejects user home directory', () async {
+          final homePath =
+              Platform.environment['HOME'] ??
+              Platform.environment['USERPROFILE'];
+          expect(homePath, isNotNull);
+          final response = await updateWorkspaceRoots(
+            root: Uri.file(homePath!),
+            connected: true,
+          );
+          expect(response.statusCode, HttpStatus.badRequest);
+          await verifyWorkspaceRoots({});
+        });
+
+        test(
+          'rejects filesystem root and single-segment top-level directories',
+          () async {
+            for (final uri in [
+              Uri.parse('file:///'),
+              Uri.parse('file:///Users'),
+              Uri.parse('file:///tmp'),
+            ]) {
+              final response = await updateWorkspaceRoots(
+                root: uri,
+                connected: true,
+              );
+              expect(response.statusCode, HttpStatus.badRequest);
+              await verifyWorkspaceRoots({});
+            }
+          },
+        );
+
+        test('rejects non-existent directory', () async {
+          final response = await updateWorkspaceRoots(
+            root: Uri.parse('file:///Users/me/non_existent_package_root_12345'),
+            connected: true,
+          );
+          expect(response.statusCode, HttpStatus.badRequest);
+          await verifyWorkspaceRoots({});
+        });
+
+        test('rejects directory without pubspec.yaml or .dart_tool', () async {
+          final emptyTempDir = Directory.systemTemp.createTempSync(
+            'non_package_dir_',
+          );
+          addTearDown(() async {
+            await deleteDirectoryWithRetry(emptyTempDir);
+          });
+          final response = await updateWorkspaceRoots(
+            root: Uri.file(emptyTempDir.path),
+            connected: true,
+          );
+          expect(response.statusCode, HttpStatus.badRequest);
+          await verifyWorkspaceRoots({});
+        });
       });
 
       group('detectRootPackageForVmService', () {

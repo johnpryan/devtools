@@ -105,6 +105,66 @@ extension VmServiceHandler on Never {
     }
   }
 
+  /// Validates whether [rootPackageUri] is a safe, existing local Dart or
+  /// Flutter package root directory.
+  @visibleForTesting
+  static bool isValidPackageRoot(Uri rootPackageUri) {
+    if (rootPackageUri.scheme != 'file' || rootPackageUri.host.isNotEmpty) {
+      return false;
+    }
+
+    try {
+      final dir = Directory.fromUri(rootPackageUri);
+      if (!dir.existsSync()) {
+        return false;
+      }
+
+      final resolvedPath = p.normalize(dir.resolveSymbolicLinksSync());
+      if (!p.isAbsolute(resolvedPath)) {
+        return false;
+      }
+
+      // Reject filesystem roots and single-segment top-level directories
+      // (e.g., `/`, `C:\`, `/Users`, `/home`, `/tmp`).
+      // `p.split` includes the root prefix (e.g. `/` or `C:\`) as the first
+      // element, so require at least 2 path components after the root prefix
+      // (i.e., at least 3 elements in `p.split`).
+      final normalizedInputPath = p.normalize(dir.path);
+      if (p.split(normalizedInputPath).length < 3 ||
+          p.split(resolvedPath).length < 3) {
+        return false;
+      }
+
+      final homeDir =
+          Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
+      if (homeDir != null && homeDir.isNotEmpty) {
+        final normalizedHome = p.normalize(
+          Directory(homeDir).existsSync()
+              ? Directory(homeDir).resolveSymbolicLinksSync()
+              : homeDir,
+        );
+        if (p.equals(resolvedPath, normalizedHome) ||
+            p.equals(normalizedInputPath, p.normalize(homeDir))) {
+          return false;
+        }
+      }
+
+      final hasPubspec = File(
+        p.join(resolvedPath, 'pubspec.yaml'),
+      ).existsSync();
+      final hasPackageConfig = File(
+        p.join(resolvedPath, '.dart_tool', 'package_config.json'),
+      ).existsSync();
+      final hasDartToolDir = Directory(
+        p.join(resolvedPath, '.dart_tool'),
+      ).existsSync();
+
+      return hasPubspec || hasPackageConfig || hasDartToolDir;
+    } catch (_) {
+      return false;
+    }
+  }
+
   @visibleForTesting
   static Future<DetectRootPackageResponse> detectRootPackageForVmService({
     required String vmServiceUriAsString,
@@ -137,6 +197,15 @@ extension VmServiceHandler on Never {
           );
         }
         rootPackageUri = Uri.parse(root);
+        if (!isValidPackageRoot(rootPackageUri)) {
+          return (
+            success: false,
+            message:
+                'Invalid package root detected for main isolate '
+                '($rootPackageUri).',
+            uri: null,
+          );
+        }
         _packageRootsForVmServiceConnections[vmServiceUriAsString] =
             rootPackageUri;
       } catch (e) {
@@ -169,6 +238,9 @@ extension VmServiceHandler on Never {
     required bool connected,
     required ServerApi api,
   }) async {
+    if (connected && !isValidPackageRoot(rootFromVmService)) {
+      return api.badRequest('Invalid workspace root: $rootFromVmService');
+    }
     final currentRoots = (await dtd.getIDEWorkspaceRoots()).ideWorkspaceRoots
         .toSet();
     // Add or remove [rootFromVmService] depending on whether this was a
