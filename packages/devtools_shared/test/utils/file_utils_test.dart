@@ -65,20 +65,165 @@ void main() {
       String fileUriString, {
       required bool useDtd,
       String? expected,
+      bool expectNull = false,
     }) async {
       final result = await packageRootFromFileUriString(
         fileUriString,
         dtd: useDtd ? testDtdConnection! : null,
-        throwOnDtdSearchFailed: useDtd,
+        throwOnDtdSearchFailed: useDtd && !expectNull,
       );
-      expect(result, equals(expected ?? projectRootUriString));
+      expect(
+        result,
+        equals(expectNull ? null : (expected ?? projectRootUriString)),
+      );
     }
 
-    test('packageRootFromFileUriString throw exception for invalid input', () {
-      expect(() async {
-        await packageRootFromFileUriString('/not/a/valid/file/uri');
-      }, throwsA(isA<AssertionError>()));
-    });
+    test(
+      'packageRootFromFileUriString returns null for non-file or non-empty host URIs',
+      () async {
+        for (final dtdInstance in [null, testDtdConnection]) {
+          expect(
+            await packageRootFromFileUriString(
+              '/not/a/valid/file/uri',
+              dtd: dtdInstance,
+            ),
+            isNull,
+          );
+          expect(
+            await packageRootFromFileUriString(
+              'http://localhost:8080/lib/foo.dart',
+              dtd: dtdInstance,
+            ),
+            isNull,
+          );
+          expect(
+            await packageRootFromFileUriString(
+              'package:my_pkg/foo.dart',
+              dtd: dtdInstance,
+            ),
+            isNull,
+          );
+          expect(
+            await packageRootFromFileUriString(
+              'file://evil.host/path/lib/foo.dart',
+              dtd: dtdInstance,
+            ),
+            isNull,
+          );
+          expect(
+            await packageRootFromFileUriString(
+              'file://127.0.0.1/Users/mac/app/lib/foo.dart',
+              dtd: dtdInstance,
+            ),
+            isNull,
+          );
+        }
+      },
+    );
+
+    test(
+      'packageRootFromFileUriString returns null for single-segment and root URIs',
+      () async {
+        for (final dtdInstance in [null, testDtdConnection]) {
+          expect(
+            await packageRootFromFileUriString(
+              'file:///Users',
+              dtd: dtdInstance,
+            ),
+            isNull,
+          );
+          expect(
+            await packageRootFromFileUriString(
+              'file:///home',
+              dtd: dtdInstance,
+            ),
+            isNull,
+          );
+          expect(
+            await packageRootFromFileUriString('file:///', dtd: dtdInstance),
+            isNull,
+          );
+          expect(
+            await packageRootFromFileUriString(
+              'file:///Users/lib/x.dart',
+              dtd: dtdInstance,
+            ),
+            isNull,
+          );
+          expect(
+            await packageRootFromFileUriString(
+              'file:///lib/x.dart',
+              dtd: dtdInstance,
+            ),
+            isNull,
+          );
+        }
+      },
+    );
+
+    test(
+      'packageRootFromFileUriString returns null when regex does not match and dtd is null',
+      () async {
+        expect(
+          await packageRootFromFileUriString('file:///Users/mac/foo.txt'),
+          isNull,
+        );
+        expect(
+          await packageRootFromFileUriString(
+            'file:///Users/mac/project/foo.dart',
+          ),
+          isNull,
+        );
+      },
+    );
+
+    test(
+      'packageRootFromFileUriString returns null when DTD finds no .dart_tool or result is home dir',
+      () async {
+        expect(
+          await packageRootFromFileUriString(
+            'file:///Users/mac/lib/x.dart',
+            dtd: testDtdConnection,
+          ),
+          isNull,
+        );
+        expect(
+          await packageRootFromFileUriString('file:///Users/mac/lib/x.dart'),
+          isNull,
+        );
+        expect(
+          await packageRootFromFileUriString(
+            'file:///home/user/lib/x.dart',
+            dtd: testDtdConnection,
+          ),
+          isNull,
+        );
+        expect(
+          await packageRootFromFileUriString('file:///home/user/lib/x.dart'),
+          isNull,
+        );
+
+        // Also verify a real directory on disk inside the DTD workspace root
+        // that has a lib/x.dart file but no .dart_tool or pubspec.yaml.
+        final nonPackageDir = Directory(
+          p.join(testDirectory.path, 'non_package_dir'),
+        )..createSync(recursive: true);
+        final nonPackageLibFile = File(
+          p.join(nonPackageDir.path, 'lib', 'x.dart'),
+        )..createSync(recursive: true);
+        await testDtdConnection!.setIDEWorkspaceRoots(dtd!.info!.secret!, [
+          Uri.parse(projectRootUriString),
+          Uri.directory(nonPackageDir.path),
+        ]);
+        expect(
+          await packageRootFromFileUriString(
+            nonPackageLibFile.uri.toString(),
+            dtd: testDtdConnection,
+          ),
+          isNull,
+        );
+      },
+    );
 
     for (final useDtd in const [true, false]) {
       test(
@@ -143,12 +288,12 @@ void main() {
           // Dart file under an unknown directory.
           await verifyPackageRoot(
             anyFile.uri.toString(),
-            expected: useDtd ? projectRootUriString : anyFile.uri.toString(),
+            expectNull: !useDtd,
             useDtd: useDtd,
           );
           await verifyPackageRoot(
             anySubFile.uri.toString(),
-            expected: useDtd ? projectRootUriString : anySubFile.uri.toString(),
+            expectNull: !useDtd,
             useDtd: useDtd,
           );
         },

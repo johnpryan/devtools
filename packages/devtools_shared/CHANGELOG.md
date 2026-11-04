@@ -5,6 +5,9 @@ found in the LICENSE file or at https://developers.google.com/open-source/licens
 -->
 # 14.0.1
 
+* Harden `packageRootFromFileUriString` with runtime `file://` URI validation and
+  return `null` when no valid package root is found or when the candidate path
+  is a single-segment or user home directory.
 * Track providing package name for DevTools extensions to isolate extension enablement,
   deduplication, and asset loading.
 * Validate `rootPath`, `buildVariant`, `configuration`, and `target` parameters in
