@@ -33,7 +33,10 @@ const flutterEngineRasterCache = '_flutter.estimateRasterCacheMemory';
 /// this method will return the URI http://127.0.0.1:60667/72K34Xmq0X0=/.
 ///
 /// Returns null if the [Uri] parsed from [value] is not [Uri.isAbsolute]
-/// (i.e., it has no scheme or it has a fragment).
+/// (i.e., it has no scheme or it has a fragment), if its scheme is not one of
+/// the allowed VM service schemes (`http`, `https`, `ws`, `wss`, `sse`,
+/// `sses`), or if its host is not a loopback address (`localhost`, `127.x.x.x`,
+/// or `::1`).
 Uri? normalizeVmServiceUri(String value) {
   value = value.trim();
 
@@ -49,12 +52,38 @@ Uri? normalizeVmServiceUri(String value) {
   // Cleanup encoded urls likely copied from the uri of an existing running
   // DevTools app.
   if (value.contains('%3A%2F%2F')) {
-    value = Uri.decodeFull(value);
+    try {
+      value = Uri.decodeFull(value);
+    } on ArgumentError {
+      return null;
+    }
   }
-  final uri = Uri.parse(value.trim()).removeFragment();
-  if (!uri.isAbsolute) {
+  final uri = Uri.tryParse(value.trim())?.removeFragment();
+  if (uri == null || !uri.isAbsolute) {
+    return null;
+  }
+  const allowedSchemes = {'http', 'https', 'ws', 'wss', 'sse', 'sses'};
+  if (!allowedSchemes.contains(uri.scheme) || !isLoopbackHost(uri.host)) {
     return null;
   }
   if (uri.path.endsWith('/')) return uri;
   return uri.replace(path: uri.path);
+}
+
+final _ipv4LoopbackRegex = RegExp(
+  r'^127(?:\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)){3}$',
+);
+
+/// Returns whether [host] is a loopback host (`localhost`, `127.x.x.x`, or
+/// IPv6 `::1`).
+bool isLoopbackHost(String host) {
+  final normalizedHost = host.toLowerCase();
+  if (normalizedHost == 'localhost' ||
+      normalizedHost == '::1' ||
+      normalizedHost == '[::1]' ||
+      normalizedHost == '0:0:0:0:0:0:0:1' ||
+      normalizedHost == '[0:0:0:0:0:0:0:1]') {
+    return true;
+  }
+  return _ipv4LoopbackRegex.hasMatch(normalizedHost);
 }
