@@ -66,6 +66,7 @@ extension _ExtensionsApiHandler on Never {
   static shelf.Response handleExtensionEnabledState(
     ServerApi api,
     Map<String, String> queryParams,
+    ExtensionsManager extensionsManager,
   ) {
     final missingRequiredParams = ServerApi._checkRequiredParameters(
       [
@@ -100,6 +101,30 @@ extension _ExtensionsApiHandler on Never {
       return api.badRequest(
         'Invalid devtoolsOptionsUri: must be a file: URI named '
         "'devtools_options.yaml'.",
+      );
+    }
+
+    final optionsFilePath = p.normalize(devtoolsOptionsFileUri.toFilePath());
+    final isServedExtensionOptionsFile = extensionsManager
+        .servedDevToolsOptionsUris
+        .any((uriString) {
+          final uri = Uri.tryParse(uriString);
+          if (uri == null || uri.scheme != 'file' || uri.host.isNotEmpty) {
+            return false;
+          }
+          return p.equals(p.normalize(uri.toFilePath()), optionsFilePath);
+        });
+    final parentDir = p.dirname(optionsFilePath);
+    final isExistingPackageRoot =
+        Directory(parentDir).existsSync() &&
+        (File(p.join(parentDir, 'pubspec.yaml')).existsSync() ||
+            File(
+              p.join(parentDir, '.dart_tool', 'package_config.json'),
+            ).existsSync());
+    if (!isServedExtensionOptionsFile && !isExistingPackageRoot) {
+      return api.badRequest(
+        'Invalid devtoolsOptionsUri: must belong to a served extension or an '
+        'existing Dart package root.',
       );
     }
 

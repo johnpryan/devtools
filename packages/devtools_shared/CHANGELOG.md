@@ -11,6 +11,9 @@ found in the LICENSE file or at https://developers.google.com/open-source/licens
   `DeeplinkManager`.
 * Add `UniversalLinkSettings.fromErrorJson`, `UniversalLinkSettings.error`, and
   `UniversalLinkSettings.error` getter to surface iOS universal link settings errors.
+* Confine `packageRootUri` and `devtoolsOptionsUri` in extension server APIs to
+  valid Dart package and IDE workspace roots, and prevent recursive directory
+  creation when looking up `devtools_options.yaml`.
 
 # 14.0.0
 

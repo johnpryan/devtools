@@ -177,6 +177,75 @@ void main() {
         expect(error, contains('Fake exception for test'));
       },
     );
+
+    test(
+      'rejects packageRootUri when directory does not exist or is not a Dart '
+      'package root',
+      () async {
+        await initializeTestDirectory();
+        final nonExistentRootUri = Uri.file(
+          p.join(extensionTestManager.testDirectory.path, 'does_not_exist'),
+        ).toString();
+        final nonPackageDir = Directory(
+          p.join(extensionTestManager.testDirectory.path, 'empty_dir'),
+        )..createSync(recursive: true);
+        final nonPackageRootUri = Uri.file(nonPackageDir.path).toString();
+
+        for (final invalidRootUri in [nonExistentRootUri, nonPackageRootUri]) {
+          final request = Request(
+            'post',
+            Uri(
+              scheme: 'https',
+              host: 'localhost',
+              path: ExtensionsApi.apiServeAvailableExtensions,
+              queryParameters: {
+                ExtensionsApi.packageRootUriPropertyName: invalidRootUri,
+              },
+            ),
+          );
+          final response = await ServerApi.handle(
+            request,
+            extensionsManager: extensionsManager,
+            deeplinkManager: FakeDeeplinkManager(),
+            dtd: dtd!.info,
+          );
+          expect(response.statusCode, HttpStatus.internalServerError);
+          expect(extensionsManager.devtoolsExtensions, isEmpty);
+        }
+      },
+    );
+
+    test('rejects packageRootUri outside IDE workspace roots', () async {
+      await initializeTestDirectory();
+      final outsidePackageDir = Directory(
+        p.join(extensionTestManager.testDirectory.path, 'outside_pkg'),
+      )..createSync(recursive: true);
+      File(p.join(outsidePackageDir.path, 'pubspec.yaml')).writeAsStringSync('''
+name: outside_pkg
+environment:
+  sdk: "^3.5.0"
+''');
+      final outsideRootUri = Uri.file(outsidePackageDir.path).toString();
+      final request = Request(
+        'post',
+        Uri(
+          scheme: 'https',
+          host: 'localhost',
+          path: ExtensionsApi.apiServeAvailableExtensions,
+          queryParameters: {
+            ExtensionsApi.packageRootUriPropertyName: outsideRootUri,
+          },
+        ),
+      );
+      final response = await ServerApi.handle(
+        request,
+        extensionsManager: extensionsManager,
+        deeplinkManager: FakeDeeplinkManager(),
+        dtd: dtd!.info,
+      );
+      expect(response.statusCode, HttpStatus.internalServerError);
+      expect(extensionsManager.devtoolsExtensions, isEmpty);
+    });
   });
 
   group(ExtensionsApi.apiExtensionEnabledState, () {
@@ -246,6 +315,46 @@ void main() {
         );
       }
     });
+
+    test('rejects devtoolsOptionsUri in a non-existent directory and does not '
+        'create the directory', () async {
+      await serveExtensions(extensionsManager);
+      final nonExistentDir = Directory(
+        p.join(extensionTestManager.testDirectory.path, 'non_existent_dir'),
+      );
+      expect(nonExistentDir.existsSync(), isFalse);
+      final invalidOptionsUri = Uri.file(
+        p.join(nonExistentDir.path, devtoolsOptionsFileName),
+      ).toString();
+      final response = await sendEnabledStateRequest(
+        extensionName: 'drift',
+        enable: true,
+        optionsUriOverride: invalidOptionsUri,
+      );
+      expect(response.statusCode, HttpStatus.badRequest);
+      expect(nonExistentDir.existsSync(), isFalse);
+    });
+
+    test(
+      'rejects devtoolsOptionsUri in an existing directory that is neither a '
+      'served extension root nor a Dart package directory',
+      () async {
+        await serveExtensions(extensionsManager);
+        final nonPackageDir = Directory(
+          p.join(extensionTestManager.testDirectory.path, 'non_package_dir'),
+        )..createSync(recursive: true);
+        final invalidOptionsFile = File(
+          p.join(nonPackageDir.path, devtoolsOptionsFileName),
+        );
+        final response = await sendEnabledStateRequest(
+          extensionName: 'drift',
+          enable: true,
+          optionsUriOverride: invalidOptionsFile.uri.toString(),
+        );
+        expect(response.statusCode, HttpStatus.badRequest);
+        expect(invalidOptionsFile.existsSync(), isFalse);
+      },
+    );
 
     test('accepts a valid devtools_options.yaml file: URI', () async {
       await serveExtensions(extensionsManager);
