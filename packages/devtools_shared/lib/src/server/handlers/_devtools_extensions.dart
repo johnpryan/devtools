@@ -46,11 +46,15 @@ extension _ExtensionsApiHandler on Never {
         rootFileUriString,
         logs,
         dtd,
+        allowedRuntimePackageRoots:
+            VmServiceHandler._packageRootsForVmServiceConnections.values,
       );
     } on ExtensionParsingException catch (e) {
       // For [ExtensionParsingException]s, we should return a success response
       // with a warning message.
       result[ExtensionsApi.extensionsResultWarningPropertyName] = e.message;
+    } on ArgumentError catch (e) {
+      return api.badRequest('$e');
     } catch (e) {
       // If any extensions were successfully detected, return a success response
       // with a warning.
@@ -66,6 +70,7 @@ extension _ExtensionsApiHandler on Never {
   static shelf.Response handleExtensionEnabledState(
     ServerApi api,
     Map<String, String> queryParams,
+    ExtensionsManager extensionsManager,
   ) {
     final missingRequiredParams = ServerApi._checkRequiredParameters(
       [
@@ -100,6 +105,26 @@ extension _ExtensionsApiHandler on Never {
       return api.badRequest(
         'Invalid devtoolsOptionsUri: must be a file: URI named '
         "'devtools_options.yaml'.",
+      );
+    }
+
+    final optionsFile = File.fromUri(devtoolsOptionsFileUri);
+    final optionsParentDir = optionsFile.parent;
+    final hasValidPackageMarker =
+        optionsParentDir.existsSync() &&
+        (File(p.join(optionsParentDir.path, 'pubspec.yaml')).existsSync() ||
+            File(
+              p.join(
+                optionsParentDir.path,
+                '.dart_tool',
+                'package_config.json',
+              ),
+            ).existsSync());
+    if (!hasValidPackageMarker ||
+        !extensionsManager.isServedDevToolsOptionsUri(devtoolsOptionsFileUri)) {
+      return api.badRequest(
+        'Invalid devtoolsOptionsUri: directory is not a valid package or '
+        'extension root.',
       );
     }
 

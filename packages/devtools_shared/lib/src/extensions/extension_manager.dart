@@ -45,6 +45,20 @@ class ExtensionsManager {
     );
   }
 
+  /// Whether [uri] matches the `devtools_options.yaml` file URI of any
+  /// currently served extension in [devtoolsExtensions].
+  bool isServedDevToolsOptionsUri(Uri uri) {
+    if (uri.scheme != 'file' || uri.host.isNotEmpty) return false;
+    final targetPath = path.normalize(uri.toFilePath());
+    return devtoolsExtensions.any((ext) {
+      final extUri = Uri.tryParse(ext.devtoolsOptionsUri);
+      if (extUri == null || extUri.scheme != 'file' || extUri.host.isNotEmpty) {
+        return false;
+      }
+      return path.equals(path.normalize(extUri.toFilePath()), targetPath);
+    });
+  }
+
   /// Serves any available DevTools extensions for the given
   /// [rootFileUriString], where [rootFileUriString] is the root for a Dart or
   /// Flutter project containing the `.dart_tool/` directory.
@@ -59,8 +73,9 @@ class ExtensionsManager {
   Future<void> serveAvailableExtensions(
     String? rootFileUriString,
     List<String> logs,
-    DtdInfo? dtd,
-  ) async {
+    DtdInfo? dtd, {
+    Iterable<Uri> allowedRuntimePackageRoots = const <Uri>[],
+  }) async {
     logs.add(
       'ExtensionsManager.serveAvailableExtensions for '
       'rootPathFileUri: $rootFileUriString',
@@ -69,9 +84,41 @@ class ExtensionsManager {
     _clear();
     final parsingErrors = StringBuffer();
 
+    final allowedRoots = <Uri>{...allowedRuntimePackageRoots};
+    var staticProjectRoots = const <Uri>[];
+
+    final dtdUri = dtd?.localUri;
+    if (dtdUri != null) {
+      DartToolingDaemon? dartToolingDaemon;
+      try {
+        dartToolingDaemon = await DartToolingDaemon.connect(dtdUri);
+        final workspaceRoots = await dartToolingDaemon.getIDEWorkspaceRoots();
+        allowedRoots.addAll(workspaceRoots.ideWorkspaceRoots);
+
+        final projectRoots = await dartToolingDaemon.getProjectRoots(
+          depth: staticExtensionsSearchDepth,
+        );
+        staticProjectRoots = projectRoots.uris ?? const <Uri>[];
+        allowedRoots.addAll(staticProjectRoots);
+      } finally {
+        await dartToolingDaemon?.close();
+      }
+    }
+
     // Find all runtime extensions for [rootFileUriString], if non-null and
     // non-empty.
     if (rootFileUriString != null && rootFileUriString.isNotEmpty) {
+      _assertUriFormat(rootFileUriString);
+      final rootUri = Uri.parse(rootFileUriString);
+      if (!_isWithinAllowedRoots(rootUri, allowedRoots)) {
+        throw ArgumentError.value(
+          rootFileUriString,
+          'rootFileUriString',
+          'must be within an active DTD workspace root or connected VM service '
+              'package root',
+        );
+      }
+
       logs.add(
         'ExtensionsManager.serveAvailableExtensions adding extensions for app '
         'root.',
@@ -86,33 +133,23 @@ class ExtensionsManager {
 
     // Find all static extensions for the project roots, which are derived from
     // the Dart Tooling Daemon, and add them to [devtoolsExtensions].
-    final dtdUri = dtd?.localUri;
     if (dtdUri != null) {
-      DartToolingDaemon? dartToolingDaemon;
-      try {
-        dartToolingDaemon = await DartToolingDaemon.connect(dtdUri);
-        final projectRoots = await dartToolingDaemon.getProjectRoots(
-          depth: staticExtensionsSearchDepth,
-        );
-        logs.add(
-          'ExtensionsManager.serveAvailableExtensions adding extensions for '
-          'DTD project roots: ${projectRoots.uris?.toString() ?? []}',
-        );
+      logs.add(
+        'ExtensionsManager.serveAvailableExtensions adding extensions for '
+        'DTD project roots: $staticProjectRoots',
+      );
 
-        for (final root in projectRoots.uris ?? const <Uri>[]) {
-          // Skip the runtime app root. These extensions have already been
-          // added to [devtoolsExtensions].
-          if (root.toString() == rootFileUriString) continue;
+      for (final root in staticProjectRoots) {
+        // Skip the runtime app root. These extensions have already been
+        // added to [devtoolsExtensions].
+        if (root.toString() == rootFileUriString) continue;
 
-          await _addExtensionsForRoot(
-            root.toString(),
-            logs: logs,
-            parsingErrors: parsingErrors,
-            staticContext: true,
-          );
-        }
-      } finally {
-        await dartToolingDaemon?.close();
+        await _addExtensionsForRoot(
+          root.toString(),
+          logs: logs,
+          parsingErrors: parsingErrors,
+          staticContext: true,
+        );
       }
     }
 
@@ -210,8 +247,31 @@ class ExtensionsManager {
     }
   }
 
+  bool _isWithinAllowedRoots(Uri candidateUri, Iterable<Uri> allowedRoots) {
+    if (candidateUri.scheme != 'file' || candidateUri.host.isNotEmpty) {
+      return false;
+    }
+    final candidatePath = path.normalize(candidateUri.toFilePath());
+    for (final allowedRoot in allowedRoots) {
+      if (allowedRoot.scheme != 'file' || allowedRoot.host.isNotEmpty) {
+        continue;
+      }
+      final allowedPath = path.normalize(allowedRoot.toFilePath());
+      if (path.equals(allowedPath, candidatePath) ||
+          path.isWithin(allowedPath, candidatePath)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   void _assertUriFormat(String? uriString) {
-    if (uriString != null && !uriString.startsWith('file://')) {
+    if (uriString == null) return;
+    final uri = Uri.tryParse(uriString);
+    if (!uriString.startsWith('file://') ||
+        uri == null ||
+        uri.scheme != 'file' ||
+        uri.host.isNotEmpty) {
       throw ArgumentError.value(uriString, 'must be a file:// URI String');
     }
   }

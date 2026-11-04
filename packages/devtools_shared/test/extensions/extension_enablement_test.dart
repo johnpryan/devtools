@@ -156,5 +156,36 @@ extensions:
   - provider: true
   - custom_pkg: true''');
     });
+
+    test(
+      'does not create options file or parent directory when parent directory '
+      'does not exist',
+      () {
+        final nonExistentDir = Directory(
+          p.join(tmpDir.path, 'non_existent_subdir'),
+        );
+        final badOptionsUri = Uri.file(
+          p.join(nonExistentDir.path, devtoolsOptionsFileName),
+        );
+        expect(
+          options.lookupExtensionEnabledState(
+            devtoolsOptionsUri: badOptionsUri,
+            extensionName: 'foo',
+          ),
+          ExtensionEnabledState.error,
+        );
+        expect(nonExistentDir.existsSync(), isFalse);
+
+        expect(
+          options.setExtensionEnabledState(
+            devtoolsOptionsUri: badOptionsUri,
+            extensionName: 'foo',
+            enable: true,
+          ),
+          ExtensionEnabledState.error,
+        );
+        expect(nonExistentDir.existsSync(), isFalse);
+      },
+    );
   });
 }

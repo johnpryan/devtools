@@ -127,12 +127,16 @@ $_extensionsKey:
   /// Returns the `devtools_options.yaml` file at [optionsUri].
   ///
   /// If the `devtools_options.yaml` does not already exist, it will be created
-  /// and written with [_defaultOptions], and then returned.
+  /// and written with [_defaultOptions] if its parent directory exists, and
+  /// then returned. Returns `null` if the parent directory does not exist.
   File? _lookupOptionsFile(Uri optionsUri) {
     final optionsFile = File.fromUri(optionsUri);
     if (!optionsFile.existsSync()) {
+      if (!optionsFile.parent.existsSync()) {
+        return null;
+      }
       optionsFile
-        ..createSync(recursive: true)
+        ..createSync()
         ..writeAsStringSync(_defaultOptions, flush: true);
     }
     return optionsFile;

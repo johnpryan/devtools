@@ -5,6 +5,9 @@ found in the LICENSE file or at https://developers.google.com/open-source/licens
 -->
 # 14.0.1
 
+* Confine `packageRootUri` and `devtoolsOptionsUri` in extension server endpoints to
+  known workspace and package roots, and remove recursive directory creation in
+  `DevToolsOptions`.
 * Track providing package name for DevTools extensions to isolate extension enablement,
   deduplication, and asset loading.
 * Validate `rootPath`, `buildVariant`, `configuration`, and `target` parameters in

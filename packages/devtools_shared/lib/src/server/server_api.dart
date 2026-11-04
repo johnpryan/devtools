@@ -145,6 +145,7 @@ class ServerApi {
         return _ExtensionsApiHandler.handleExtensionEnabledState(
           api,
           queryParams,
+          extensionsManager,
         );
 
       // ----- deeplink api. -----

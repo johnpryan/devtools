@@ -60,6 +60,7 @@ void main() {
   Future<Response> serveExtensions(
     ExtensionsManager manager, {
     bool includeRuntimeRoot = true,
+    String? packageRootUriOverride,
   }) async {
     final request = Request(
       'post',
@@ -68,9 +69,9 @@ void main() {
         host: 'localhost',
         path: ExtensionsApi.apiServeAvailableExtensions,
         queryParameters: {
-          ExtensionsApi.packageRootUriPropertyName: includeRuntimeRoot
-              ? extensionTestManager.runtimeAppRoot
-              : null,
+          ExtensionsApi.packageRootUriPropertyName:
+              packageRootUriOverride ??
+              (includeRuntimeRoot ? extensionTestManager.runtimeAppRoot : null),
         },
       ),
     );
@@ -177,6 +178,22 @@ void main() {
         expect(error, contains('Fake exception for test'));
       },
     );
+
+    test('rejects packageRootUri outside DTD IDE workspace roots', () async {
+      await initializeTestDirectory();
+      final outsideDir = Directory.systemTemp.createTempSync(
+        'untrusted_extension_root_',
+      );
+      addTearDown(() => deleteDirectoryWithRetry(outsideDir));
+
+      final outsideRootUri = Uri.file(outsideDir.path).toString();
+      final response = await serveExtensions(
+        extensionsManager,
+        packageRootUriOverride: outsideRootUri,
+      );
+      expect(response.statusCode, HttpStatus.badRequest);
+      expect(extensionsManager.devtoolsExtensions, isEmpty);
+    });
   });
 
   group(ExtensionsApi.apiExtensionEnabledState, () {
@@ -245,6 +262,50 @@ void main() {
           reason: 'expected $invalidUri to be rejected',
         );
       }
+    });
+
+    test('rejects a devtoolsOptionsUri in a non-existent directory without '
+        'creating the directory', () async {
+      await serveExtensions(extensionsManager);
+      final tempBase = Directory.systemTemp.createTempSync(
+        'options_non_existent_test_',
+      );
+      addTearDown(() => deleteDirectoryWithRetry(tempBase));
+
+      final nonExistentDir = Directory(
+        p.join(tempBase.path, 'nested', 'untrusted'),
+      );
+      final nonExistentOptionsUri = Uri.file(
+        p.join(nonExistentDir.path, devtoolsOptionsFileName),
+      ).toString();
+
+      final response = await sendEnabledStateRequest(
+        extensionName: 'drift',
+        enable: true,
+        optionsUriOverride: nonExistentOptionsUri,
+      );
+      expect(response.statusCode, HttpStatus.badRequest);
+      expect(nonExistentDir.existsSync(), isFalse);
+    });
+
+    test('rejects a devtoolsOptionsUri in an existing directory that is not a '
+        'served extension/package root', () async {
+      await serveExtensions(extensionsManager);
+      final untrustedDir = Directory.systemTemp.createTempSync(
+        'options_untrusted_dir_test_',
+      );
+      addTearDown(() => deleteDirectoryWithRetry(untrustedDir));
+
+      final untrustedOptionsFile = File(
+        p.join(untrustedDir.path, devtoolsOptionsFileName),
+      );
+      final response = await sendEnabledStateRequest(
+        extensionName: 'drift',
+        enable: true,
+        optionsUriOverride: untrustedOptionsFile.uri.toString(),
+      );
+      expect(response.statusCode, HttpStatus.badRequest);
+      expect(untrustedOptionsFile.existsSync(), isFalse);
     });
 
     test('accepts a valid devtools_options.yaml file: URI', () async {
@@ -324,9 +385,15 @@ class _TestExtensionsManager extends ExtensionsManager {
   Future<void> serveAvailableExtensions(
     String? rootFileUriString,
     List<String> logs,
-    DtdInfo? dtd,
-  ) async {
-    await super.serveAvailableExtensions(rootFileUriString, logs, dtd);
+    DtdInfo? dtd, {
+    Iterable<Uri> allowedRuntimePackageRoots = const <Uri>[],
+  }) async {
+    await super.serveAvailableExtensions(
+      rootFileUriString,
+      logs,
+      dtd,
+      allowedRuntimePackageRoots: allowedRuntimePackageRoots,
+    );
     throw Exception('Fake exception for test');
   }
 }
