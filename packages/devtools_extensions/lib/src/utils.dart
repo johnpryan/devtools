@@ -11,8 +11,10 @@ import 'api/model.dart';
 
 DevToolsExtensionEvent? tryParseExtensionEvent(Event e) {
   if (e.isMessageEvent) {
-    final messageData = (e as MessageEvent).data.dartify()!;
-    return DevToolsExtensionEvent.tryParse(messageData);
+    final messageData = (e as MessageEvent).data.dartify();
+    if (messageData != null) {
+      return DevToolsExtensionEvent.tryParse(messageData);
+    }
   }
   return null;
 }

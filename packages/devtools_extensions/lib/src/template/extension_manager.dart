@@ -80,16 +80,38 @@ class ExtensionManager {
   }
 
   void _handleMessage(Event e) {
+    if (!e.isMessageEvent) return;
+    final messageEvent = e as MessageEvent;
+    if (!isValidEventOriginAndSource(messageEvent)) return;
+
     final extensionEvent = tryParseExtensionEvent(e);
     if (extensionEvent != null) {
-      _handleExtensionEvent(extensionEvent, e as MessageEvent);
+      _handleExtensionEvent(extensionEvent, messageEvent);
     }
+  }
+
+  /// Whether [e] has a valid `origin` and `source` window for a message sent
+  /// from the DevTools extension host.
+  @visibleForTesting
+  bool isValidEventOriginAndSource(MessageEvent e) {
+    final isValidOrigin = isValidExtensionHostOrigin(
+      eventOrigin: e.origin,
+      extensionOrigin: window.origin,
+      documentReferrer: document.referrer,
+      isReleaseMode: kReleaseMode,
+    );
+    if (!isValidOrigin) return false;
+
+    final expectedSource = _useSimulatedEnvironment ? window : window.parent;
+    return expectedSource != null && e.source == expectedSource;
   }
 
   void _handleExtensionEvent(
     DevToolsExtensionEvent extensionEvent,
     MessageEvent e,
   ) {
+    if (!isValidEventOriginAndSource(e)) return;
+
     // Ignore events that come from the [ExtensionManager] itself.
     if (extensionEvent.source == '$ExtensionManager') return;
 

@@ -371,6 +371,138 @@ void main() {
       }, throwsAssertionError);
     });
   });
+
+  group('Origin validation helpers', () {
+    test('isLoopbackOrigin', () {
+      expect(isLoopbackOrigin('http://localhost:9100'), isTrue);
+      expect(isLoopbackOrigin('https://localhost:9100'), isTrue);
+      expect(isLoopbackOrigin('http://127.0.0.1:9100'), isTrue);
+      expect(isLoopbackOrigin('http://[::1]:9100'), isTrue);
+
+      expect(isLoopbackOrigin(''), isFalse);
+      expect(isLoopbackOrigin('null'), isFalse);
+      expect(isLoopbackOrigin('https://evil.example.com'), isFalse);
+      expect(isLoopbackOrigin('ws://127.0.0.1:9100'), isFalse);
+      expect(isLoopbackOrigin('data:text/html,hello'), isFalse);
+    });
+
+    test('isValidExtensionHostOrigin', () {
+      const extensionOrigin = 'http://127.0.0.1:9100';
+
+      // Exact origin match is allowed.
+      expect(
+        isValidExtensionHostOrigin(
+          eventOrigin: extensionOrigin,
+          extensionOrigin: extensionOrigin,
+        ),
+        isTrue,
+      );
+
+      // Empty or untrusted origins are rejected.
+      expect(
+        isValidExtensionHostOrigin(
+          eventOrigin: '',
+          extensionOrigin: extensionOrigin,
+        ),
+        isFalse,
+      );
+      expect(
+        isValidExtensionHostOrigin(
+          eventOrigin: 'https://evil.example.com',
+          extensionOrigin: extensionOrigin,
+        ),
+        isFalse,
+      );
+      expect(
+        isValidExtensionHostOrigin(
+          eventOrigin: 'http://127.0.0.1:8804',
+          extensionOrigin: extensionOrigin,
+        ),
+        isFalse,
+      );
+
+      // Different loopback port matching document.referrer is rejected in
+      // release mode, but allowed in non-release mode (e.g., `dt run`).
+      expect(
+        isValidExtensionHostOrigin(
+          eventOrigin: 'http://localhost:54321',
+          extensionOrigin: extensionOrigin,
+          documentReferrer: 'http://localhost:54321/inspector?uri=...',
+        ),
+        isFalse,
+      );
+      expect(
+        isValidExtensionHostOrigin(
+          eventOrigin: 'http://localhost:54321',
+          extensionOrigin: extensionOrigin,
+          documentReferrer: 'http://localhost:54321/inspector?uri=...',
+          isReleaseMode: false,
+        ),
+        isTrue,
+      );
+
+      // Attacker on another loopback port not matching document.referrer is
+      // rejected even in non-release mode.
+      expect(
+        isValidExtensionHostOrigin(
+          eventOrigin: 'http://127.0.0.1:8804',
+          extensionOrigin: extensionOrigin,
+          documentReferrer: 'http://127.0.0.1:9100/?uri=...',
+          isReleaseMode: false,
+        ),
+        isFalse,
+      );
+
+      // Non-loopback document.referrer is rejected in non-release mode.
+      expect(
+        isValidExtensionHostOrigin(
+          eventOrigin: 'https://evil.example.com',
+          extensionOrigin: extensionOrigin,
+          documentReferrer: 'https://evil.example.com/attack.html',
+          isReleaseMode: false,
+        ),
+        isFalse,
+      );
+    });
+
+    test('isValidExtensionOrigin', () {
+      const extensionUrl =
+          'http://127.0.0.1:9100/devtools_extensions/foo_ext/index.html?theme=dark';
+
+      expect(
+        isValidExtensionOrigin(
+          eventOrigin: 'http://127.0.0.1:9100',
+          extensionUrl: extensionUrl,
+        ),
+        isTrue,
+      );
+      expect(
+        isValidExtensionOrigin(eventOrigin: '', extensionUrl: extensionUrl),
+        isFalse,
+      );
+      expect(
+        isValidExtensionOrigin(
+          eventOrigin: 'http://127.0.0.1:8804',
+          extensionUrl: extensionUrl,
+        ),
+        isFalse,
+      );
+      expect(
+        isValidExtensionOrigin(
+          eventOrigin: 'https://evil.example.com',
+          extensionUrl: extensionUrl,
+        ),
+        isFalse,
+      );
+      expect(
+        isValidExtensionOrigin(
+          eventOrigin: 'http://127.0.0.1:9100',
+          extensionUrl: 'data:text/html;charset=utf-8,placeholder',
+        ),
+        isFalse,
+      );
+    });
+  });
 }
 
 void verifyEventDirection(

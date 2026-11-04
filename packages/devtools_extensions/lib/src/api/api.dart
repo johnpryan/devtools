@@ -145,3 +145,68 @@ abstract interface class DevToolsExtensionHostInterface {
     void Function()? onUnknownEvent,
   });
 }
+
+/// Whether [origin] is an HTTP or HTTPS loopback origin (`localhost`,
+/// `127.0.0.1`, `::1`, or `[::1]`).
+bool isLoopbackOrigin(String origin) {
+  final uri = Uri.tryParse(origin);
+  if (uri == null ||
+      !uri.hasAuthority ||
+      uri.host.isEmpty ||
+      (uri.scheme != 'http' && uri.scheme != 'https')) {
+    return false;
+  }
+  final host = uri.host.toLowerCase();
+  return host == 'localhost' ||
+      host == '127.0.0.1' ||
+      host == '::1' ||
+      host == '[::1]';
+}
+
+/// Whether [eventOrigin] is a valid origin for a message sent from the DevTools
+/// extension host to an extension running at [extensionOrigin].
+///
+/// In release mode ([isReleaseMode] is true), [eventOrigin] must match
+/// [extensionOrigin]. In non-release mode, [eventOrigin] may also match the
+/// origin of [documentReferrer] when both [eventOrigin] and [extensionOrigin]
+/// are loopback origins (e.g., when debugging DevTools with `dt run`).
+bool isValidExtensionHostOrigin({
+  required String eventOrigin,
+  required String extensionOrigin,
+  String? documentReferrer,
+  bool isReleaseMode = true,
+}) {
+  if (eventOrigin.isEmpty) return false;
+  if (eventOrigin == extensionOrigin) return true;
+  if (!isReleaseMode &&
+      documentReferrer != null &&
+      documentReferrer.isNotEmpty) {
+    final referrerUri = Uri.tryParse(documentReferrer);
+    if (referrerUri != null &&
+        referrerUri.hasAuthority &&
+        referrerUri.host.isNotEmpty &&
+        (referrerUri.scheme == 'http' || referrerUri.scheme == 'https') &&
+        eventOrigin == referrerUri.origin &&
+        isLoopbackOrigin(eventOrigin) &&
+        isLoopbackOrigin(extensionOrigin)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// Whether [eventOrigin] matches the HTTP or HTTPS origin of [extensionUrl].
+bool isValidExtensionOrigin({
+  required String eventOrigin,
+  required String extensionUrl,
+}) {
+  if (eventOrigin.isEmpty) return false;
+  final extensionUri = Uri.tryParse(extensionUrl);
+  if (extensionUri == null ||
+      !extensionUri.hasAuthority ||
+      extensionUri.host.isEmpty ||
+      (extensionUri.scheme != 'http' && extensionUri.scheme != 'https')) {
+    return false;
+  }
+  return eventOrigin == extensionUri.origin;
+}

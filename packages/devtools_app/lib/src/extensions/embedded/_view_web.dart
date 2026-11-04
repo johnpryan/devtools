@@ -7,6 +7,7 @@ import 'dart:js_interop';
 
 import 'package:devtools_app_shared/ui.dart';
 import 'package:devtools_app_shared/utils.dart';
+import 'package:devtools_app_shared/web_utils.dart';
 import 'package:devtools_extensions/api.dart';
 import 'package:devtools_extensions/utils.dart';
 import 'package:devtools_shared/devtools_shared.dart';
@@ -174,6 +175,10 @@ class _ExtensionIFrameController extends DisposableController
   }
 
   void _handleMessage(Event e) {
+    if (!e.isMessageEvent) return;
+    final messageEvent = e as MessageEvent;
+    if (!_isAllowedExtensionMessage(messageEvent)) return;
+
     final extensionEvent = tryParseExtensionEvent(e);
     if (extensionEvent != null) {
       onEventReceived(
@@ -183,6 +188,18 @@ class _ExtensionIFrameController extends DisposableController
         ),
       );
     }
+  }
+
+  bool _isAllowedExtensionMessage(MessageEvent messageEvent) {
+    if (!isValidExtensionOrigin(
+      eventOrigin: messageEvent.origin,
+      extensionUrl: embeddedExtensionController.extensionUrl,
+    )) {
+      return false;
+    }
+    final contentWindow =
+        embeddedExtensionController.extensionIFrame.contentWindow;
+    return contentWindow != null && messageEvent.source == contentWindow;
   }
 
   /// Sends [DevToolsExtensionEventType.ping] events to the extension until we
